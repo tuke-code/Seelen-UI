@@ -77,6 +77,7 @@ slu_events_declaration! {
     BatteriesStatus(Vec<Battery>) as "batteries-status",
 
     ColorsChanged(UIColors) as "colors-changed",
+    DarkModeChanged(bool) as "dark-mode-changed",
     SystemFontsChanged(Vec<SeelenFont>) as "system::fonts-changed",
 
     WMSetReservation(Option<twm::TwmReservation>) as "wm::set-reservation",

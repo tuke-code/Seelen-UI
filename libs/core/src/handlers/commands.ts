@@ -34,6 +34,8 @@ export enum SeelenCommand {
   SetMonitorHdr = "set_monitor_hdr",
   SystemGetColors = "get_system_colors",
   SystemSetAccentColor = "set_system_accent_color",
+  SystemGetDarkMode = "get_system_dark_mode",
+  SystemSetDarkMode = "set_system_dark_mode",
   SystemGetLanguages = "get_system_languages",
   SystemSetKeyboardLayout = "set_system_keyboard_layout",
   SystemGetImeState = "get_ime_state",

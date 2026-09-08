@@ -5,6 +5,7 @@
 ### features
 
 - HDR toggle for supported monitors on quick settings widget.
+- Light/dark mode toggle on quick settings widget.
 
 ### fix
 

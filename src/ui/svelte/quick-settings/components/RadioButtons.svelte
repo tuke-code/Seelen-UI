@@ -54,32 +54,43 @@
       ),
     );
   }
+
+  async function toggleDarkMode() {
+    await invoke(SeelenCommand.SystemSetDarkMode, { enabled: !state.darkMode });
+  }
 </script>
 
-{#if state.radios.length > 0 || hdrMonitors.length > 0}
-  <div class="radio-buttons-container">
-    {#each state.radios as radio (radio.id)}
-      <button
-        class="radio-button"
-        data-skin={radio.is_enabled ? "solid" : "default"}
-        onclick={() => toggleRadio(radio)}
-        title={`${radio.name} - ${radio.is_enabled ? $t("enabled") : $t("disabled")}`}
-      >
-        <Icon iconName={getRadioIcon(radio.kind)} />
-        <span class="radio-button-label">{getRadioLabel(radio.kind)}</span>
-      </button>
-    {/each}
+<div class="radio-buttons-container">
+  {#each state.radios as radio (radio.id)}
+    <button
+      class="radio-button"
+      data-skin={radio.is_enabled ? "solid" : "default"}
+      onclick={() => toggleRadio(radio)}
+      title={`${radio.name} - ${radio.is_enabled ? $t("enabled") : $t("disabled")}`}
+    >
+      <Icon iconName={getRadioIcon(radio.kind)} />
+      <span class="radio-button-label">{getRadioLabel(radio.kind)}</span>
+    </button>
+  {/each}
 
-    {#if hdrMonitors.length > 0}
-      <button
-        class="radio-button"
-        data-skin={hdrEnabled ? "solid" : "default"}
-        onclick={toggleHdr}
-        title={`HDR - ${hdrEnabled ? $t("enabled") : $t("disabled")}`}
-      >
-        <Icon iconName="TbHdr" />
-        <span class="radio-button-label">High Dynamic Range</span>
-      </button>
-    {/if}
-  </div>
-{/if}
+  {#if hdrMonitors.length > 0}
+    <button
+      class="radio-button"
+      data-skin={hdrEnabled ? "solid" : "default"}
+      onclick={toggleHdr}
+      title={`HDR - ${hdrEnabled ? $t("enabled") : $t("disabled")}`}
+    >
+      <Icon iconName="TbHdr" />
+      <span class="radio-button-label">{$t("hdr")}</span>
+    </button>
+  {/if}
+
+  <button
+    class="radio-button"
+    data-skin={state.darkMode ? "solid" : "default"}
+    onclick={toggleDarkMode}
+  >
+    <Icon iconName={state.darkMode ? "IoMoon" : "IoSunny"} />
+    <span class="radio-button-label">{state.darkMode ? $t("dark_mode") : $t("light_mode")}</span>
+  </button>
+</div>

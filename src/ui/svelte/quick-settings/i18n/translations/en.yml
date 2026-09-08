@@ -1,4 +1,7 @@
 app_settings: App Settings
+hdr: High Dynamic Range
+light_mode: Light Mode
+dark_mode: Dark Mode
 disabled: Disabled
 enabled: Enabled
 power: Power

@@ -22,6 +22,12 @@ fn get_system_settings() -> &'static SystemSettings {
             {
                 emit_to_webviews(SeelenEvent::ColorsChanged, &colors);
             }
+
+            if event == SystemSettingsEvent::ColorSchemeSwitched
+                && let Ok(is_dark) = SystemSettings::instance().get_dark_mode()
+            {
+                emit_to_webviews(SeelenEvent::DarkModeChanged, &is_dark);
+            }
         });
     });
     SystemSettings::instance()
@@ -35,4 +41,14 @@ pub fn get_system_colors() -> Result<UIColors> {
 #[tauri::command(async)]
 pub fn set_system_accent_color(color: Color) -> Result<()> {
     SystemSettings::set_accent_color(color)
+}
+
+#[tauri::command(async)]
+pub fn get_system_dark_mode() -> Result<bool> {
+    get_system_settings().get_dark_mode()
+}
+
+#[tauri::command(async)]
+pub fn set_system_dark_mode(enabled: bool) -> Result<()> {
+    SystemSettings::set_dark_mode(enabled)
 }

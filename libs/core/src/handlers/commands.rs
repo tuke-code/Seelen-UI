@@ -151,6 +151,8 @@ slu_commands_declaration! {
     SetMonitorHdr = set_monitor_hdr(id: MonitorId, state: bool),
     SystemGetColors = get_system_colors() -> UIColors,
     SystemSetAccentColor = set_system_accent_color(color: Color),
+    SystemGetDarkMode = get_system_dark_mode() -> bool,
+    SystemSetDarkMode = set_system_dark_mode(enabled: bool),
     SystemGetLanguages = get_system_languages() -> Vec<SystemLanguage>,
     SystemSetKeyboardLayout = set_system_keyboard_layout(id: String, handle: String),
     SystemGetImeState = get_ime_state() -> ImeState,

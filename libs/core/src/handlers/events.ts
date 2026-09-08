@@ -25,6 +25,7 @@ export enum SeelenEvent {
   PowerMode = "power-mode",
   BatteriesStatus = "batteries-status",
   ColorsChanged = "colors-changed",
+  DarkModeChanged = "dark-mode-changed",
   SystemFontsChanged = "system::fonts-changed",
   WMSetReservation = "wm::set-reservation",
   WMForceRetiling = "wm::force-retiling",

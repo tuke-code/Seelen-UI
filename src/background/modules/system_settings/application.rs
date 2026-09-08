@@ -3,13 +3,19 @@ use std::sync::LazyLock;
 use crate::{
     error::{Result, ResultLogExt},
     event_manager,
+    windows_api::string_utils::WindowsString,
 };
 use seelen_core::system_state::{Color, UIColors};
 use windows::{
     Foundation::TypedEventHandler,
     UI::ViewManagement::{UIColorType, UISettings},
+    Win32::{
+        Foundation::{LPARAM, WPARAM},
+        UI::WindowsAndMessaging::{HWND_BROADCAST, SendNotifyMessageW, WM_SETTINGCHANGE},
+    },
 };
 use windows_core::IInspectable;
+use winreg::{RegKey, enums::HKEY_CURRENT_USER};
 
 fn winrt_to_self(color: windows::UI::Color) -> Color {
     Color {
@@ -127,12 +133,14 @@ fn generate_accent_palette(color: seelen_core::system_state::Color) -> UIColors 
 pub enum SystemSettingsEvent {
     ColorChanged,
     TextScaleChanged,
+    ColorSchemeSwitched,
 }
 
 pub struct SystemSettings {
     settings: UISettings,
     color_event_token: Option<i64>,
     text_scale_event_token: Option<i64>,
+    is_dark_mode: std::sync::atomic::AtomicBool,
 }
 
 unsafe impl Send for SystemSettings {}
@@ -154,6 +162,9 @@ impl SystemSettings {
             settings: UISettings::new().expect("Failed to create UISettings"),
             color_event_token: None,
             text_scale_event_token: None,
+            is_dark_mode: std::sync::atomic::AtomicBool::new(
+                Self::read_dark_mode_from_registry().unwrap_or(false),
+            ),
         }
     }
 
@@ -179,6 +190,16 @@ impl SystemSettings {
         _args: windows_core::Ref<IInspectable>,
     ) -> windows_core::Result<()> {
         let _ = Self::event_tx().send(SystemSettingsEvent::ColorChanged);
+
+        if let Ok(is_dark) = Self::read_dark_mode_from_registry() {
+            let previous = Self::instance()
+                .is_dark_mode
+                .swap(is_dark, std::sync::atomic::Ordering::SeqCst);
+            if previous != is_dark {
+                let _ = Self::event_tx().send(SystemSettingsEvent::ColorSchemeSwitched);
+            }
+        }
+
         Ok(())
     }
 
@@ -195,13 +216,6 @@ impl SystemSettings {
     }
 
     pub fn set_accent_color(color: seelen_core::system_state::Color) -> Result<()> {
-        use windows::Win32::{
-            Foundation::{LPARAM, WPARAM},
-            UI::WindowsAndMessaging::{HWND_BROADCAST, SendNotifyMessageW, WM_SETTINGCHANGE},
-        };
-        use windows_core::w;
-        use winreg::{RegKey, enums::HKEY_CURRENT_USER};
-
         log::info!(
             "Setting accent color to #{:02X}{:02X}{:02X}{:02X}",
             color.r,
@@ -230,12 +244,49 @@ impl SystemSettings {
             },
         )?;
 
+        let param = WindowsString::from("ImmersiveColorSet");
         unsafe {
             let _ = SendNotifyMessageW(
                 HWND_BROADCAST,
                 WM_SETTINGCHANGE,
                 WPARAM(0),
-                LPARAM(w!("ImmersiveColorSet").as_ptr() as isize),
+                LPARAM(param.as_pcwstr().0 as isize),
+            );
+        }
+        Ok(())
+    }
+
+    fn read_dark_mode_from_registry() -> Result<bool> {
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let key =
+            hkcu.open_subkey(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")?;
+        let apps_use_light_theme: u32 = key.get_value("AppsUseLightTheme").unwrap_or(1);
+        Ok(apps_use_light_theme == 0)
+    }
+
+    pub fn get_dark_mode(&self) -> Result<bool> {
+        Self::read_dark_mode_from_registry()
+    }
+
+    pub fn set_dark_mode(enabled_dark: bool) -> Result<()> {
+        log::info!("Setting dark mode to {enabled_dark}");
+
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let key = hkcu.open_subkey_with_flags(
+            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+            winreg::enums::KEY_SET_VALUE,
+        )?;
+        let dword: u32 = if enabled_dark { 0 } else { 1 };
+        key.set_value("AppsUseLightTheme", &dword)?;
+        key.set_value("SystemUsesLightTheme", &dword)?;
+
+        let param = WindowsString::from("ImmersiveColorSet");
+        unsafe {
+            let _ = SendNotifyMessageW(
+                HWND_BROADCAST,
+                WM_SETTINGCHANGE,
+                WPARAM(0),
+                LPARAM(param.as_pcwstr().0 as isize),
             );
         }
         Ok(())
