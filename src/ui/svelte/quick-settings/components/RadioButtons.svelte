@@ -58,6 +58,13 @@
   async function toggleDarkMode() {
     await invoke(SeelenCommand.SystemSetDarkMode, { enabled: !state.darkMode });
   }
+
+  async function toggleNightLight() {
+    const enabled = !state.nightLightEnabled;
+    invoke(SeelenCommand.SystemSetNightLightEnabled, { enabled }).then(() => {
+      state.nightLightEnabled = enabled;
+    });
+  }
 </script>
 
 <div class="radio-buttons-container">
@@ -92,5 +99,15 @@
   >
     <Icon iconName={state.darkMode ? "IoMoon" : "IoSunny"} />
     <span class="radio-button-label">{state.darkMode ? $t("dark_mode") : $t("light_mode")}</span>
+  </button>
+
+  <button
+    class="radio-button"
+    data-skin={state.nightLightEnabled ? "solid" : "default"}
+    onclick={toggleNightLight}
+    title={`${$t("night_light")} - ${state.nightLightEnabled ? $t("enabled") : $t("disabled")}`}
+  >
+    <Icon iconName="IoEye" />
+    <span class="radio-button-label">{$t("eye_care")}</span>
   </button>
 </div>

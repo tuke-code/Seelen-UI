@@ -2,13 +2,16 @@ use std::sync::Once;
 
 use seelen_core::{
     handlers::SeelenEvent,
-    system_state::{Color, UIColors},
+    system_state::{Color, NightlightSettings, UIColors},
 };
 
 use crate::{
     app::emit_to_webviews,
     error::Result,
-    modules::system_settings::application::{SystemSettings, SystemSettingsEvent},
+    modules::system_settings::{
+        application::{SystemSettings, SystemSettingsEvent},
+        nightlight,
+    },
 };
 
 /// Lazy initialization wrapper that registers Tauri events on first access
@@ -51,4 +54,24 @@ pub fn get_system_dark_mode() -> Result<bool> {
 #[tauri::command(async)]
 pub fn set_system_dark_mode(enabled: bool) -> Result<()> {
     SystemSettings::set_dark_mode(enabled)
+}
+
+#[tauri::command(async)]
+pub fn get_system_night_light_settings() -> Result<NightlightSettings> {
+    nightlight::get_settings()
+}
+
+#[tauri::command(async)]
+pub fn get_system_night_light_enabled() -> Result<bool> {
+    nightlight::get_enabled()
+}
+
+#[tauri::command(async)]
+pub fn set_system_night_light_enabled(enabled: bool) -> Result<()> {
+    nightlight::set_enabled(enabled)
+}
+
+#[tauri::command(async)]
+pub fn set_system_night_light_color_temperature(temperature: u16) -> Result<()> {
+    nightlight::set_color_temperature(temperature)
 }

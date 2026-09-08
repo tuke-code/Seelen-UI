@@ -105,14 +105,14 @@ use windows::{
             WindowsAndMessaging::{
                 DispatchMessageW, FindWindowExW, GW_OWNER, GWL_EXSTYLE, GWL_STYLE, GetClassNameW,
                 GetDesktopWindow, GetForegroundWindow, GetParent, GetWindow, GetWindowLongW,
-                GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindow,
-                IsWindowVisible, IsZoomed, MSG, PM_REMOVE, PeekMessageW, PostMessageW,
+                GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, HWND_BROADCAST, IsIconic,
+                IsWindow, IsWindowVisible, IsZoomed, MSG, PM_REMOVE, PeekMessageW, PostMessageW,
                 SET_WINDOW_POS_FLAGS, SHOW_WINDOW_CMD, SPI_GETDESKWALLPAPER, SPI_SETDESKWALLPAPER,
                 SPIF_SENDCHANGE, SPIF_UPDATEINIFILE, SW_SHOWNORMAL, SWP_ASYNCWINDOWPOS,
                 SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
-                SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SendMessageW, SetWindowPos, ShowWindow,
-                ShowWindowAsync, SystemParametersInfoW, TranslateMessage, WINDOW_EX_STYLE,
-                WINDOW_STYLE, WS_SIZEBOX, WS_THICKFRAME,
+                SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SendMessageW, SendNotifyMessageW,
+                SetWindowPos, ShowWindow, ShowWindowAsync, SystemParametersInfoW, TranslateMessage,
+                WINDOW_EX_STYLE, WINDOW_STYLE, WM_SETTINGCHANGE, WS_SIZEBOX, WS_THICKFRAME,
             },
         },
     },
@@ -1075,6 +1075,21 @@ impl WindowsApi {
         }
 
         Ok(())
+    }
+
+    /// Broadcasts a `WM_SETTINGCHANGE` message to all top-level windows, with `param` naming
+    /// the setting that changed (e.g. `"ImmersiveColorSet"`), so listeners refresh immediately
+    /// instead of waiting to notice the underlying registry change on their own.
+    pub fn broadcast_setting_change(param: &str) {
+        let param = WindowsString::from(param);
+        unsafe {
+            let _ = SendNotifyMessageW(
+                HWND_BROADCAST,
+                WM_SETTINGCHANGE,
+                WPARAM(0),
+                LPARAM(param.as_pcwstr().0 as isize),
+            );
+        }
     }
 
     /// Recomputes the environment block that a freshly logged-on user would have (machine +

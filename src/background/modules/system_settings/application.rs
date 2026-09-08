@@ -3,16 +3,12 @@ use std::sync::LazyLock;
 use crate::{
     error::{Result, ResultLogExt},
     event_manager,
-    windows_api::string_utils::WindowsString,
+    windows_api::WindowsApi,
 };
 use seelen_core::system_state::{Color, UIColors};
 use windows::{
     Foundation::TypedEventHandler,
     UI::ViewManagement::{UIColorType, UISettings},
-    Win32::{
-        Foundation::{LPARAM, WPARAM},
-        UI::WindowsAndMessaging::{HWND_BROADCAST, SendNotifyMessageW, WM_SETTINGCHANGE},
-    },
 };
 use windows_core::IInspectable;
 use winreg::{RegKey, enums::HKEY_CURRENT_USER};
@@ -244,15 +240,7 @@ impl SystemSettings {
             },
         )?;
 
-        let param = WindowsString::from("ImmersiveColorSet");
-        unsafe {
-            let _ = SendNotifyMessageW(
-                HWND_BROADCAST,
-                WM_SETTINGCHANGE,
-                WPARAM(0),
-                LPARAM(param.as_pcwstr().0 as isize),
-            );
-        }
+        WindowsApi::broadcast_setting_change("ImmersiveColorSet");
         Ok(())
     }
 
@@ -280,15 +268,7 @@ impl SystemSettings {
         key.set_value("AppsUseLightTheme", &dword)?;
         key.set_value("SystemUsesLightTheme", &dword)?;
 
-        let param = WindowsString::from("ImmersiveColorSet");
-        unsafe {
-            let _ = SendNotifyMessageW(
-                HWND_BROADCAST,
-                WM_SETTINGCHANGE,
-                WPARAM(0),
-                LPARAM(param.as_pcwstr().0 as isize),
-            );
-        }
+        WindowsApi::broadcast_setting_change("ImmersiveColorSet");
         Ok(())
     }
 

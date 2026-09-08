@@ -34,12 +34,15 @@ subscribe(SeelenEvent.SystemMonitorsChanged, monitors.setByPayload);
 const darkMode = lazyRune(() => invoke(SeelenCommand.SystemGetDarkMode));
 subscribe(SeelenEvent.DarkModeChanged, darkMode.setByPayload);
 
+const nightLightEnabled = lazyRune(() => invoke(SeelenCommand.SystemGetNightLightEnabled));
+
 await Promise.all([
   brightness.init(),
   mediaDevices.init(),
   radios.init(),
   monitors.init(),
   darkMode.init(),
+  nightLightEnabled.init(),
 ]);
 
 class State {
@@ -61,6 +64,12 @@ class State {
   }
   get darkMode(): boolean {
     return darkMode.value;
+  }
+  get nightLightEnabled(): boolean {
+    return nightLightEnabled.value;
+  }
+  set nightLightEnabled(value: boolean) {
+    nightLightEnabled.value = value;
   }
 }
 export const state = new State();
