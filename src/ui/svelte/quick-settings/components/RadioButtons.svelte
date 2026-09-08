@@ -6,6 +6,9 @@
   import type { IconName } from "libs/ui/icons";
   import { t } from "../i18n";
 
+  const hdrMonitors = $derived(state.monitors.filter((m) => m.hdr !== null && m.hdr !== undefined));
+  const hdrEnabled = $derived(hdrMonitors.length > 0 && hdrMonitors.every((m) => m.hdr));
+
   function getRadioIcon(kind: RadioDeviceKind): IconName {
     switch (kind) {
       case RadioDeviceKind.WiFi:
@@ -42,9 +45,18 @@
       enabled: !radio.is_enabled,
     });
   }
+
+  async function toggleHdr() {
+    const newState = !hdrEnabled;
+    await Promise.all(
+      hdrMonitors.map((monitor) =>
+        invoke(SeelenCommand.SetMonitorHdr, { id: monitor.id, state: newState }),
+      ),
+    );
+  }
 </script>
 
-{#if state.radios.length > 0}
+{#if state.radios.length > 0 || hdrMonitors.length > 0}
   <div class="radio-buttons-container">
     {#each state.radios as radio (radio.id)}
       <button
@@ -57,5 +69,17 @@
         <span class="radio-button-label">{getRadioLabel(radio.kind)}</span>
       </button>
     {/each}
+
+    {#if hdrMonitors.length > 0}
+      <button
+        class="radio-button"
+        data-skin={hdrEnabled ? "solid" : "default"}
+        onclick={toggleHdr}
+        title={`HDR - ${hdrEnabled ? $t("enabled") : $t("disabled")}`}
+      >
+        <Icon iconName="TbHdr" />
+        <span class="radio-button-label">High Dynamic Range</span>
+      </button>
+    {/if}
   </div>
 {/if}

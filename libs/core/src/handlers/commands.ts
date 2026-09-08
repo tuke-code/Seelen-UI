@@ -31,6 +31,7 @@ export enum SeelenCommand {
   InstallLastAvailableUpdate = "install_last_available_update",
   SystemGetForegroundWindowColor = "get_foreground_window_color",
   SystemGetMonitors = "get_connected_monitors",
+  SetMonitorHdr = "set_monitor_hdr",
   SystemGetColors = "get_system_colors",
   SystemSetAccentColor = "set_system_accent_color",
   SystemGetLanguages = "get_system_languages",

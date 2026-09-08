@@ -12,6 +12,7 @@ impl TryFrom<Monitor> for PhysicalMonitor {
             rect: m.rect()?,
             scale_factor: m.scale_factor()?,
             is_primary: m.is_primary(),
+            hdr: m.hdr_state().unwrap_or(None),
         })
     }
 }

@@ -7,10 +7,14 @@ use windows::{
     },
     Win32::{
         Devices::Display::{
+            DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO,
             DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME, DISPLAYCONFIG_DEVICE_INFO_HEADER,
-            DISPLAYCONFIG_MODE_INFO, DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE, DISPLAYCONFIG_PATH_INFO,
-            DISPLAYCONFIG_TARGET_DEVICE_NAME, DisplayConfigGetDeviceInfo,
-            GetDisplayConfigBufferSizes, QDC_ONLY_ACTIVE_PATHS, QueryDisplayConfig,
+            DISPLAYCONFIG_DEVICE_INFO_SET_ADVANCED_COLOR_STATE,
+            DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO, DISPLAYCONFIG_MODE_INFO,
+            DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE, DISPLAYCONFIG_PATH_INFO,
+            DISPLAYCONFIG_SET_ADVANCED_COLOR_STATE, DISPLAYCONFIG_TARGET_DEVICE_NAME,
+            DisplayConfigGetDeviceInfo, DisplayConfigSetDeviceInfo, GetDisplayConfigBufferSizes,
+            QDC_ONLY_ACTIVE_PATHS, QueryDisplayConfig,
         },
         Graphics::Gdi::{HMONITOR, MONITORINFOEXW},
     },
@@ -73,24 +77,16 @@ impl Monitor {
         WindowsApi::monitor_info(self.0)
     }
 
-    /// Returns (MonitorId, friendly name) for this HMONITOR.
-    ///
-    /// Strategy:
-    /// 1. Obtain the monitor's virtual-desktop position from `GetMonitorInfo`.
-    /// 2. Find all `QueryDisplayConfig` paths whose source mode sits at that position.
-    /// 3. For each candidate path try `winrt_stable_id_for_target`:
-    ///    - WinRT `DisplayManager.GetCurrentTargets()` only surfaces physical display
-    ///      targets. Virtual/render-only paths (e.g. the NVIDIA dGPU Optimus path) are
-    ///      absent from that list, so they naturally produce no match and we continue
-    ///      to the next candidate.
-    ///    - The first path whose `targetInfo` matches a WinRT `DisplayTarget` gives us
-    ///      the authoritative `StableMonitorId` and the friendly name.
-    pub fn get_stable_info(&self) -> Result<(MonitorId, String)> {
+    /// Returns the `DisplayConfigAndModes` snapshot along with the indices of the
+    /// `DISPLAYCONFIG_PATH_INFO` entries whose source mode sits at this monitor's
+    /// top-left corner on the virtual desktop (i.e. the paths that scan out to it).
+    fn matching_paths(&self) -> Result<(DisplayConfigAndModes, Vec<usize>)> {
         let info = WindowsApi::monitor_info(self.0)?;
         let rect = info.monitorInfo.rcMonitor;
 
         let display_config = DisplayConfigAndModes::query_active()?;
-        for path in &display_config.paths {
+        let mut indices = Vec::new();
+        for (idx, path) in display_config.paths.iter().enumerate() {
             unsafe {
                 // Only consider paths that have a source mode (desktop surface).
                 let mode_idx = path.sourceInfo.Anonymous.modeInfoIdx as usize;
@@ -108,7 +104,29 @@ impl Monitor {
                 if pos.x != rect.left || pos.y != rect.top {
                     continue;
                 }
+                indices.push(idx);
+            }
+        }
+        Ok((display_config, indices))
+    }
 
+    /// Returns (MonitorId, friendly name) for this HMONITOR.
+    ///
+    /// Strategy:
+    /// 1. Obtain the monitor's virtual-desktop position from `GetMonitorInfo`.
+    /// 2. Find all `QueryDisplayConfig` paths whose source mode sits at that position.
+    /// 3. For each candidate path try `winrt_stable_id_for_target`:
+    ///    - WinRT `DisplayManager.GetCurrentTargets()` only surfaces physical display
+    ///      targets. Virtual/render-only paths (e.g. the NVIDIA dGPU Optimus path) are
+    ///      absent from that list, so they naturally produce no match and we continue
+    ///      to the next candidate.
+    ///    - The first path whose `targetInfo` matches a WinRT `DisplayTarget` gives us
+    ///      the authoritative `StableMonitorId` and the friendly name.
+    pub fn get_stable_info(&self) -> Result<(MonitorId, String)> {
+        let (display_config, indices) = self.matching_paths()?;
+        for idx in indices {
+            let path = &display_config.paths[idx];
+            unsafe {
                 // Query the DisplayConfig target device name for the friendly name.
                 let mut target_name = DISPLAYCONFIG_TARGET_DEVICE_NAME {
                     header: DISPLAYCONFIG_DEVICE_INFO_HEADER {
@@ -135,6 +153,59 @@ impl Monitor {
             }
         }
         Err("No WinRT DisplayTarget found for HMONITOR".into())
+    }
+
+    /// Returns the HDR / advanced-color state of this monitor.
+    /// `None` means the monitor/output does not support advanced color at all.
+    pub fn hdr_state(&self) -> Result<Option<bool>> {
+        let (display_config, indices) = self.matching_paths()?;
+        for idx in indices {
+            let path = &display_config.paths[idx];
+            unsafe {
+                let mut color_info = DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO {
+                    header: DISPLAYCONFIG_DEVICE_INFO_HEADER {
+                        r#type: DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO,
+                        size: std::mem::size_of::<DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO>() as u32,
+                        adapterId: path.targetInfo.adapterId,
+                        id: path.targetInfo.id,
+                    },
+                    ..Default::default()
+                };
+                if DisplayConfigGetDeviceInfo(&mut color_info.header) != 0 {
+                    continue;
+                }
+                let flags = color_info.Anonymous.value;
+                let supported = flags & 0x1 != 0;
+                let enabled = flags & 0x2 != 0;
+                return Ok(supported.then_some(enabled));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Enables/disables HDR / advanced-color on this monitor.
+    pub fn set_hdr_state(&self, enabled: bool) -> Result<()> {
+        let (display_config, indices) = self.matching_paths()?;
+        for idx in indices {
+            let path = &display_config.paths[idx];
+            unsafe {
+                let mut state = DISPLAYCONFIG_SET_ADVANCED_COLOR_STATE {
+                    header: DISPLAYCONFIG_DEVICE_INFO_HEADER {
+                        r#type: DISPLAYCONFIG_DEVICE_INFO_SET_ADVANCED_COLOR_STATE,
+                        size: std::mem::size_of::<DISPLAYCONFIG_SET_ADVANCED_COLOR_STATE>() as u32,
+                        adapterId: path.targetInfo.adapterId,
+                        id: path.targetInfo.id,
+                    },
+                    ..Default::default()
+                };
+                state.Anonymous.value = enabled as u32;
+                let result = DisplayConfigSetDeviceInfo(&state.header);
+                if result == 0 {
+                    return Ok(());
+                }
+            }
+        }
+        Err("Failed to set HDR state: no matching display path found".into())
     }
 
     pub fn stable_id(&self) -> Result<MonitorId> {

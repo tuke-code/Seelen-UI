@@ -2,6 +2,10 @@
 
 ## [2.8.5-dev]
 
+### features
+
+- HDR toggle for supported monitors on quick settings widget.
+
 ### fix
 
 - notifications behaviors

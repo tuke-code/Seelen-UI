@@ -1,8 +1,14 @@
 use std::sync::Once;
 
-use seelen_core::{handlers::SeelenEvent, system_state::PhysicalMonitor};
+use seelen_core::{
+    handlers::SeelenEvent,
+    system_state::{MonitorId, PhysicalMonitor},
+};
 
-use crate::{app::emit_to_webviews, modules::monitors::MonitorManager};
+use crate::{
+    app::emit_to_webviews, error::Result, modules::monitors::MonitorManager,
+    windows_api::MonitorEnumerator,
+};
 
 fn get_monitor_manager() -> &'static MonitorManager {
     static TAURI_EVENT_REGISTRATION: Once = Once::new();
@@ -23,4 +29,13 @@ fn get_monitor_manager() -> &'static MonitorManager {
 #[tauri::command(async)]
 pub fn get_connected_monitors() -> Vec<PhysicalMonitor> {
     get_monitor_manager().get_cached_data()
+}
+
+#[tauri::command(async)]
+pub fn set_monitor_hdr(id: MonitorId, state: bool) -> Result<()> {
+    let monitor = MonitorEnumerator::enumerate_win32()?
+        .into_iter()
+        .find(|m| matches!(m.get_stable_info(), Ok((mid, _)) if mid == id))
+        .ok_or("Monitor not found")?;
+    monitor.set_hdr_state(state)
 }

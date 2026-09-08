@@ -148,6 +148,7 @@ slu_commands_declaration! {
     // System
     SystemGetForegroundWindowColor = get_foreground_window_color() -> Color,
     SystemGetMonitors = get_connected_monitors() -> Vec<PhysicalMonitor>,
+    SetMonitorHdr = set_monitor_hdr(id: MonitorId, state: bool),
     SystemGetColors = get_system_colors() -> UIColors,
     SystemSetAccentColor = set_system_accent_color(color: Color),
     SystemGetLanguages = get_system_languages() -> Vec<SystemLanguage>,
