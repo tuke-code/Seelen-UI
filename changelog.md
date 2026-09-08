@@ -2,6 +2,10 @@
 
 ## [2.8.5-dev]
 
+### fix
+
+- notifications behaviors
+
 ## [2.8.4]
 
 ### enhancements

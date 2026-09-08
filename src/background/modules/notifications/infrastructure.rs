@@ -8,6 +8,7 @@ use windows::{
     Win32::UI::{
         Notifications::{INotificationActivationCallback, NOTIFICATION_USER_INPUT_DATA},
         Shell::{AO_NONE, ApplicationActivationManager, IApplicationActivationManager},
+        WindowsAndMessaging::{ASFW_ANY, AllowSetForegroundWindow},
     },
     core::GUID,
 };
@@ -50,10 +51,11 @@ pub fn get_notifications() -> Vec<AppNotification> {
 pub fn activate_notification(
     id: u32,
     umid: String,
-    args: String,
+    args: Option<String>,
     activation_type: ToastActionActivationType,
     input_data: HashMap<String, String>,
 ) -> Result<()> {
+    let args = args.unwrap_or_default();
     log::trace!(
         "Activating notification \'{umid}\' (id={id}, type={activation_type:?}) with args \'{args}\'"
     );
@@ -104,6 +106,31 @@ pub fn activate_notification(
 
                 let app_umid_w = WindowsString::from_str(&app_umid);
                 let args_w = WindowsString::from_str(&args);
+
+                // Real Action Center is a trusted broker exempt from the foreground-lock
+                // restriction, so activated apps can always raise their window. We're a
+                // regular process, so without this Windows may silently deny the
+                // activated app's SetForegroundWindow call and the click appears to do
+                // nothing (no error, no window).
+                let _ = AllowSetForegroundWindow(ASFW_ANY);
+
+                // Known limitation: Firefox (and Gecko forks) always bring their window
+                // to the foreground here, but never open the tab/action tied to the
+                // toast. This `Activate()` call genuinely reaches Firefox's COM object
+                // (no error, no missing CLSID) — the failure is entirely on Firefox's
+                // side, not ours. Firefox's native `ToastNotificationHandler::OnActivate`
+                // doesn't parse `args` itself for a plain click — it just calls a JS
+                // callback (`mAlertCallbacks->OnAlertClick()`) that was stashed on that
+                // specific handler object back when the notification was first shown by
+                // the page (e.g. a web push notification). That JS callback isn't tied to
+                // anything reconstructible from `args`/`windowsTag`, and its lifetime is
+                // shorter than the toast's entry in Windows' own notification history, so
+                // by the time we replay an older notification from that history the
+                // callback is long gone and only the native (foreground-only) part of
+                // `OnActivate` still does anything. Real Action Center reaches Firefox
+                // through a private broker (`WpnUserService`) that isn't available to
+                // third parties, so there's no way to fully replicate its behavior here —
+                // same class of limitation as the Telegram case below.
                 toast_activator.Activate(app_umid_w.as_pcwstr(), args_w.as_pcwstr(), &data)?;
                 Ok(())
             });

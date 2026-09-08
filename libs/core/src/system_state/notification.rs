@@ -329,7 +329,7 @@ pub enum ToastActionAfterActivationBehavior {
     #[default]
     #[serde(alias = "default")]
     Default,
-    #[serde(alias = "pendingUpdate")]
+    #[serde(alias = "pendingUpdate", alias = "pendingupdate")]
     PendingUpdate,
     #[serde(other)]
     Unknown,
@@ -356,7 +356,7 @@ pub enum ToastActionActivationType {
 #[cfg_attr(all(feature = "gen-binds", not(feature = "salvo")), derive(ts_rs::TS))]
 #[cfg_attr(all(feature = "gen-binds", not(feature = "salvo")), ts(repr(enum = name)))]
 pub enum ToastActionPlacement {
-    #[serde(alias = "contextMenu")]
+    #[serde(alias = "contextMenu", alias = "contextmenu")]
     ContextMenu,
     #[serde(other)]
     Unknown,

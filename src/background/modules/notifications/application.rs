@@ -1,7 +1,6 @@
 use parking_lot::Mutex as ParkingLotMutex;
 use seelen_core::system_state::{
-    AppNotification, NotificationsMode, Toast, ToastActionActivationType, ToastBindingChild,
-    ToastText,
+    AppNotification, NotificationsMode, Toast, ToastBindingChild, ToastText,
 };
 use std::{
     collections::HashSet,
@@ -18,11 +17,12 @@ use windows::{
     UI::Notifications::{
         KnownNotificationBindings,
         Management::{UserNotificationListener, UserNotificationListenerAccessStatus},
-        NotificationKinds, ToastNotificationManager, ToastNotificationManagerForUser,
-        ToastNotificationMode, UserNotification, UserNotificationChangedEventArgs,
-        UserNotificationChangedKind,
+        Notification, NotificationKinds, ToastNotification, ToastNotificationManager,
+        ToastNotificationManagerForUser, ToastNotificationMode, UserNotification,
+        UserNotificationChangedEventArgs, UserNotificationChangedKind,
     },
 };
+use windows_collections::IVectorView;
 use winreg::{
     RegKey,
     enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE},
@@ -245,20 +245,57 @@ impl NotificationManager {
         Ok(())
     }
 
-    fn clean_toast(toast: &mut Toast, umid: &str) -> Result<()> {
-        // `shell:AppsFolder\<aumid>` only resolves for packaged (Appx/Msix) apps. Win32
-        // apps that use a dedicated toast AUMID register it under
-        // `SOFTWARE\Classes\AppUserModelId` and are never listed in AppsFolder, so
-        // synthesizing that launch string made the click fail with
-        // "Windows cannot find shell:AppsFolder\<aumid>". It also forced `Protocol`
-        // activation, which skips the COM activator that is the correct way to activate
-        // those toasts. Leave `launch` empty for them so `activate_notification` falls
-        // through to `INotificationActivationCallback`.
-        if toast.launch.is_none() && AppUserModelId::from(umid.to_owned()).is_appx() {
-            toast.launch = Some(format!("shell:AppsFolder\\{umid}"));
-            toast.activation_type = ToastActionActivationType::Protocol;
+    fn get_notification_content(
+        notification: &Notification,
+        toast_notifications: IVectorView<ToastNotification>,
+        umid: &str,
+    ) -> Result<Toast> {
+        let visuals = notification.Visual()?;
+        let binding = visuals.GetBinding(&KnownNotificationBindings::ToastGeneric()?)?;
+        let text_sequence = binding.GetTextElements()?;
+
+        let mut notification_text = String::new();
+        for text in &text_sequence {
+            let text = text.Text()?.to_string_lossy().trim().replace("\r\n", "\n");
+            notification_text.push_str(&text);
         }
 
+        for toast_notification in toast_notifications {
+            // this can be null when the notification count is bigger than the max allowed by default 20
+            if let Ok(content) = toast_notification.Content() {
+                let toast_xml = content.GetXml()?.to_string();
+                let mut toast: Toast = quick_xml::de::from_str(&toast_xml)?;
+                let toast_text = get_text_from_toast_for_comparison(&toast);
+
+                // log::debug!("comparing: \n - {notification_text:?} \n - {toast_text:?} \n {toast:?}");
+
+                if notification_text == toast_text {
+                    Self::clean_toast(&mut toast, umid)?;
+                    return Ok(toast);
+                }
+            }
+        }
+
+        log::debug!("Toast content not found, generating one from plain text");
+        let mut toast = Toast::default();
+        let content = &mut toast.visual.binding.children;
+        for text in text_sequence {
+            let text = text
+                .Text()?
+                .to_string_lossy()
+                .replace("\r\n", "\n")
+                .trim()
+                .to_owned();
+            content.push(ToastBindingChild::Text(ToastText {
+                id: None,
+                content: text,
+            }));
+        }
+        Self::clean_toast(&mut toast, umid)?;
+        Ok(toast)
+    }
+
+    fn clean_toast(toast: &mut Toast, umid: &str) -> Result<()> {
         let package_path = AppInfo::GetFromAppUserModelId(&umid.into())
             .and_then(|info| info.Package())
             .and_then(|package| package.InstalledPath())
@@ -362,16 +399,6 @@ impl NotificationManager {
         let display_info = app_info.DisplayInfo()?;
         let app_umid = app_info.AppUserModelId()?;
 
-        let visuals = notification.Visual()?;
-        let binding = visuals.GetBinding(&KnownNotificationBindings::ToastGeneric()?)?;
-        let text_sequence = binding.GetTextElements()?;
-
-        let mut notification_text = String::new();
-        for text in &text_sequence {
-            let text = text.Text()?.to_string_lossy().trim().replace("\r\n", "\n");
-            notification_text.push_str(&text);
-        }
-
         let history = self.manager.History()?;
         let toast_notifications = history.GetHistoryWithId(&app_umid)?;
 
@@ -381,44 +408,11 @@ impl NotificationManager {
             app_umid
         );
 
-        let mut notification_content = None;
-        for toast_notification in toast_notifications {
-            // this can be null when the notification count is bigger than the max allowed by default 20
-            if let Ok(content) = toast_notification.Content() {
-                let toast_xml = content.GetXml()?.to_string();
-                let mut toast: Toast = quick_xml::de::from_str(&toast_xml)?;
-                let toast_text = get_text_from_toast(&toast);
-
-                if notification_text == toast_text {
-                    Self::clean_toast(&mut toast, &app_umid.to_string())?;
-                    notification_content = Some(toast);
-                    break;
-                }
-            }
-        }
-
-        let notification_content = match notification_content {
-            Some(content) => content,
-            None => {
-                log::debug!("Toast content not found, generating one from plain text");
-                let mut toast = Toast::default();
-                let content = &mut toast.visual.binding.children;
-                for text in text_sequence {
-                    let text = text
-                        .Text()?
-                        .to_string_lossy()
-                        .replace("\r\n", "\n")
-                        .trim()
-                        .to_owned();
-                    content.push(ToastBindingChild::Text(ToastText {
-                        id: None,
-                        content: text,
-                    }));
-                }
-                Self::clean_toast(&mut toast, &app_umid.to_string())?;
-                toast
-            }
-        };
+        let notification_content = Self::get_notification_content(
+            &notification,
+            toast_notifications,
+            &app_umid.to_string(),
+        )?;
 
         // pre-extraction to avoid flickering on the ui
         request_icon_extraction_from_umid(&app_umid.to_string().into());
@@ -466,13 +460,22 @@ impl Drop for NotificationManager {
     }
 }
 
-fn get_text_from_toast(toast: &Toast) -> String {
+fn get_text_from_toast_for_comparison(toast: &Toast) -> String {
     let mut text = String::new();
-    for entry in &toast.visual.binding.children {
-        // text inside groups are intended to be ignored for the comparison
-        if let ToastBindingChild::Text(entry) = entry {
-            text.push_str(entry.content.replace("\r\n", "\n").trim());
-        }
+    // only the first two top-level text entries are exposed by UserNotification::Visual,
+    // so only those are relevant for comparison
+    for entry in toast
+        .visual
+        .binding
+        .children
+        .iter()
+        .filter_map(|entry| match entry {
+            ToastBindingChild::Text(entry) => Some(entry),
+            _ => None,
+        })
+        .take(2)
+    {
+        text.push_str(entry.content.replace("\r\n", "\n").trim());
     }
     text
 }
@@ -487,6 +490,7 @@ pub fn get_toast_activator_clsid(app_umid: &AppUserModelId) -> Result<String> {
             if let Some(clsid) = get_registered_custom_activator(umid) {
                 return Ok(clsid);
             }
+
             let guard = StartMenuManager::instance();
             if let Some(item) = guard.get_by_file_umid(umid) {
                 let clsid = WindowsApi::get_file_toast_activator(&item.path)?;
@@ -504,11 +508,17 @@ pub fn get_toast_activator_clsid(app_umid: &AppUserModelId) -> Result<String> {
 /// Win32 apps register the CLSID of their `INotificationActivationCallback` when they
 /// use a dedicated toast AUMID. HKCU takes precedence over HKLM, matching how the
 /// shell resolves `Classes`.
-/// https://learn.microsoft.com/en-us/windows/win32/shell/enable-desktop-toast-with-com-server
 fn get_registered_custom_activator(umid: &str) -> Option<String> {
-    let subkey = format!(r"SOFTWARE\Classes\AppUserModelId\{umid}");
-    for root in [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE] {
-        let Ok(key) = RegKey::predef(root).open_subkey(&subkey) else {
+    let roots = [
+        (HKEY_CURRENT_USER, r"SOFTWARE\Classes\AppUserModelId"),
+        (HKEY_LOCAL_MACHINE, r"SOFTWARE\Classes\AppUserModelId"),
+    ];
+
+    for (root, subkey) in roots {
+        let Ok(key) = RegKey::predef(root).open_subkey(subkey) else {
+            continue;
+        };
+        let Ok(key) = key.open_subkey(umid) else {
             continue;
         };
         let Ok(clsid) = key.get_value::<String, _>("CustomActivator") else {
