@@ -75,7 +75,11 @@ let activeMonitor = $derived.by(() => {
   const pos = desiredPosition;
   const found = pos &&
     monitors.value.find(
-      (m) => m.rect.left <= pos.x && pos.x < m.rect.right && m.rect.top <= pos.y && pos.y < m.rect.bottom,
+      (m) =>
+        m.rect.left <= pos.x &&
+        pos.x < m.rect.right &&
+        m.rect.top <= pos.y &&
+        pos.y < m.rect.bottom,
     );
   return found || monitors.value.find((m) => m.isPrimary) || monitors.value[0];
 });
@@ -103,6 +107,13 @@ let relativeActiveMonitor = $derived.by(() => {
       bottom: monitor.rect.bottom - desktopRect.top,
     },
   };
+});
+
+$effect.root(() => {
+  widget.attachPosition();
+  $effect(() => {
+    widget.setPosition(desktopRect);
+  });
 });
 
 // +++++++++++++++++++++++ State Class +++++++++++++++++++++++
@@ -232,13 +243,3 @@ window.onkeyup = (e) => {
     onAltKeyUp();
   }
 };
-
-// +++++++++++++++++++++++ Sizing +++++++++++++++++++++++
-
-// The window itself spans all monitors (like the power-menu overlay); the switcher
-// content is then positioned onto whichever monitor the cursor was on at trigger time.
-$effect.root(() => {
-  $effect(() => {
-    widget.setPosition(desktopRect);
-  });
-});

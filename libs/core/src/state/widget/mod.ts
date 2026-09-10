@@ -1,6 +1,5 @@
 import {
   type Alignment,
-  type Frame,
   type GenericWidgetSettings,
   type Rect,
   type Widget as IWidget,
@@ -9,22 +8,20 @@ import {
   WidgetPreset,
   type WidgetSettingItem,
   WidgetStatus,
-  type WidgetTriggerPayload,
 } from "@seelen-ui/types";
 import { invoke, SeelenCommand, SeelenEvent } from "../../handlers/mod.ts";
 import { decodeBase64Url } from "@std/encoding";
 import { debounce } from "../../utils/async.ts";
-import { OPTIMISTIC_FRAME, WidgetAutoSizer } from "./sizing.ts";
 import { adjustPositionByPlacement, fitIntoMonitor, initMonitorsState } from "./positioning.ts";
 import { startThemingTool } from "../theme/theming.ts";
 import type { InitWidgetOptions, ReadyWidgetOptions, WidgetInformation } from "./interfaces.ts";
 import { disableAnimationsOnPerformanceMode } from "./performance.ts";
-import { getCurrentWebview, type Webview } from "@tauri-apps/api/webview";
-import { getCurrentWindow, type Window } from "@tauri-apps/api/window";
 import { subscribe } from "../../handlers/mod.ts";
+import { WidgetBasics } from "./abstractions/mod.ts";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { OPTIMISTIC_FRAME } from "./abstractions/3_autosize.ts";
 
 interface WidgetInternalState {
-  hwnd: number;
   initialized: boolean;
   ready: boolean;
   firstFocus: boolean;
@@ -33,7 +30,7 @@ interface WidgetInternalState {
 /**
  * Represents the widget instance running in the current webview
  */
-export class Widget {
+export class Widget extends WidgetBasics {
   /**
    * Alternative accesor for the current running widget.\
    * Will throw if the library is being used on a non Seelen UI environment
@@ -59,24 +56,18 @@ export class Widget {
   public readonly def: IWidget;
   /** decoded widget instance information */
   public readonly decoded: WidgetInformation;
-  /** current webview where the widget is running */
-  public readonly webview: Webview;
-  /** current window where the widget is running */
-  public readonly window: Window;
 
-  private autoSizer?: WidgetAutoSizer;
   private destroyOnHide = false;
   private runtimeState: WidgetInternalState = {
-    hwnd: 0,
     initialized: false,
     ready: false,
     firstFocus: true,
   };
 
   private constructor(widget: IWidget) {
+    super();
+
     this.def = widget;
-    this.webview = getCurrentWebview();
-    this.window = getCurrentWindow();
 
     const [id, query] = getDecodedWebviewLabel();
     const params = new URLSearchParams(query);
@@ -89,11 +80,6 @@ export class Widget {
       instanceId: paramsObj.instanceId || null,
       params: Object.freeze(Object.fromEntries(params)),
     });
-  }
-
-  /** Returns the current window id of the widget */
-  get windowId(): number {
-    return this.runtimeState.hwnd;
   }
 
   /** Returns if the widget is ready */
@@ -130,7 +116,9 @@ export class Widget {
       // value. If the trigger then repositions with that stale size its SetSelfPosition call
       // lands in the Win32 queue after the correct resize, overwriting it. Running execute()
       // here detects the remaining diff and issues a corrective resize + position adjustment.
-      await this.autoSizer?.execute();
+      if (this.autoSize.enabled) {
+        await this.executeAutoSize();
+      }
     });
   }
 
@@ -142,7 +130,7 @@ export class Widget {
     }, 100);
 
     subscribe(SeelenEvent.GlobalFocusChanged, ({ payload: focused }) => {
-      if (focused.hwnd !== this.runtimeState.hwnd && focused.ownerHwnd !== this.runtimeState.hwnd) {
+      if (focused.hwnd !== this.windowId && focused.ownerHwnd !== this.windowId) {
         if (wasFocused) {
           hideDelayed();
         }
@@ -161,7 +149,6 @@ export class Widget {
    */
   private async persistPositionAndSize(): Promise<void> {
     const storage = globalThis.window.localStorage;
-    const autoSizeOnly = !!this.autoSizer;
 
     const [x, y, width, height] = [`x`, `y`, `width`, `height`].map((k) => storage.getItem(`${k}`));
 
@@ -169,8 +156,8 @@ export class Widget {
       const frame = await OPTIMISTIC_FRAME.runExclusive((ref) => ({
         x: Number(x),
         y: Number(y),
-        width: autoSizeOnly ? ref.width : Number(width),
-        height: autoSizeOnly ? ref.height : Number(height),
+        width: this.autoSize.enabled ? ref.width : Number(width),
+        height: this.autoSize.enabled ? ref.height : Number(height),
       }));
 
       const safeFrame = fitIntoMonitor(frame);
@@ -182,7 +169,7 @@ export class Widget {
       });
     }
 
-    this.window.onMoved(
+    this.onMoved(
       debounce((e) => {
         const { x, y } = e.payload;
         storage.setItem(`x`, x.toString());
@@ -191,8 +178,8 @@ export class Widget {
       }, 500),
     );
 
-    if (!autoSizeOnly) {
-      this.window.onResized(
+    if (!this.autoSize.enabled) {
+      this.onResized(
         debounce((e) => {
           const { width, height } = e.payload;
           storage.setItem(`width`, width.toString());
@@ -203,17 +190,75 @@ export class Widget {
     }
   }
 
+  // play with zoom level to reset device pixel ratio to 1:1
   private async normalizeDevicePixelRatio(): Promise<void> {
-    // play with zoom level to reset device pixel ratio to 1:1
-    let oldDPR = globalThis.devicePixelRatio;
-    await this.webview.setZoom(1 / oldDPR);
-    this.window.onScaleChanged(() => {
-      if (globalThis.devicePixelRatio !== 1) {
-        // when zoom was set dpr changed, so in case of change this is accomulative unit
-        oldDPR = oldDPR * globalThis.devicePixelRatio;
-        this.webview.setZoom(1 / oldDPR);
-      }
+    // NOTE: intentionally *not* derived from `window.scaleFactor()` (the OS/monitor
+    // DPI scale). That value doesn't necessarily match this webview's own unzoomed
+    // devicePixelRatio (e.g. `window.scaleFactor()` = 1.5 was observed while the
+    // webview's native devicePixelRatio was already 1), so using it as the
+    // compensation source made the correction converge on the wrong target and spin
+    // forever.
+    //
+    // Root cause is in tao itself: `Window::scale_factor()` is not a live query, it's
+    // a cached field (`window_state.scale_factor`) that tao only ever refreshes from
+    // the `WM_DPICHANGED` handler (tao's platform_impl/windows/event_loop.rs). Windows
+    // does not reliably deliver `WM_DPICHANGED` to a window moved/resized while
+    // hidden, so that cache can go stale and stay wrong indefinitely - unlike our own
+    // `WindowsApi::get_monitor_scale_factor` (src/background/windows_api/mod.rs),
+    // which calls `GetDpiForMonitor` live on every call. `globalThis.devicePixelRatio`
+    // is ground truth for what the webview is actually rendering at regardless of
+    // which upstream cache is stale, so we accumulate the correction from that
+    // instead, folding the zoom already applied into the next reading.
+    let zoom = 1;
+    // onScaleChanged / onMoved / onResized / the retest below can all trigger a call
+    // while a previous call's setZoom is still in flight. Without serializing them,
+    // two calls can race on `zoom` and on the webview's actual zoom factor, so the
+    // accumulator here permanently desyncs from what's really applied and the WARN
+    // below fires forever. Chain calls onto this promise so only one runs at a time.
+    let queue = Promise.resolve();
+
+    const normalizeDpr = () => {
+      queue = queue.then(async () => {
+        const dpr = globalThis.devicePixelRatio;
+        console.debug(`normalizeDpr: dpr = ${dpr}, current zoom = ${zoom}`);
+        if (dpr === 1) {
+          return;
+        }
+
+        zoom = zoom / dpr;
+        await this.webview.setZoom(zoom);
+        console.debug(`Zoom compensation set to ${zoom}`);
+
+        // retest, setZoom's effect on devicePixelRatio is not necessarily synchronous
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        if (globalThis.devicePixelRatio !== 1) {
+          console.warn(
+            `DPR normalization failed! dpr = ${globalThis.devicePixelRatio}, zoom applied = ${zoom}`,
+          );
+        }
+      });
+      return queue;
+    };
+
+    await this.window.onScaleChanged(({ payload }) => {
+      console.debug(`Scale changed to ${payload.scaleFactor}, normalizing...`);
+      normalizeDpr();
     });
+
+    // onScaleChanged relies on WM_DPICHANGED, which is not reliably emitted for a
+    // window that is repositioned while hidden (e.g. moved to another monitor before
+    // being shown). onMoved/onResized do fire in that case, so re-check the scale
+    // factor whenever the window's position or size changes.
+    const recheckDpr = debounce(() => {
+      if (globalThis.devicePixelRatio !== 1) {
+        console.debug(`DPR is ${globalThis.devicePixelRatio} after move/resize, normalizing...`);
+        normalizeDpr();
+      }
+    }, 100);
+    this.onMoved(recheckDpr);
+    this.onResized(recheckDpr);
+
+    await normalizeDpr();
   }
 
   /**
@@ -228,7 +273,8 @@ export class Widget {
     }
 
     this.runtimeState.initialized = true;
-    this.runtimeState.hwnd = await invoke(SeelenCommand.GetSelfWindowId);
+    await this.prepare();
+
     this.destroyOnHide = options.closeOnHide ?? this.def.lazy;
 
     if (options.normalizeDevicePixelRatio) {
@@ -236,16 +282,12 @@ export class Widget {
     }
 
     await initMonitorsState();
-    await OPTIMISTIC_FRAME.runExclusive(async (state) => {
-      await state.init(this);
+    await OPTIMISTIC_FRAME.runExclusive((state) => {
+      state.init(this);
     });
 
     if (options.autoSizeByContent) {
-      this.autoSizer = new WidgetAutoSizer(
-        this,
-        options.autoSizeByContent,
-        options.autoSizeFitOnScreen ?? true,
-      );
+      this.setupAutoSizer(options.autoSizeByContent, options.autoSizeFitOnScreen ?? true);
     }
 
     if (options.saveAndRestoreLastRect ?? this.def.preset === WidgetPreset.Desktop) {
@@ -300,7 +342,9 @@ export class Widget {
     }
 
     this.runtimeState.ready = true;
-    await this.autoSizer?.execute();
+    if (this.autoSize.enabled) {
+      await this.executeAutoSize();
+    }
 
     if (show && !(await this.window.isVisible())) {
       await this.show();
@@ -310,27 +354,37 @@ export class Widget {
     await invoke(SeelenCommand.SetCurrentWidgetStatus, { status: WidgetStatus.Ready });
   }
 
-  public onTrigger(cb: (args: WidgetTriggerPayload) => void): void {
-    this.webview.listen<WidgetTriggerPayload>(SeelenEvent.WidgetTriggered, ({ payload }) => {
-      cb(payload);
+  private _attach: { enabled: boolean; unsub?: () => void; rect?: Rect } = { enabled: false };
+  /**
+   * If for some reason the widget position is changed (like caused by system on system bars addition)
+   * this will reposition the widget to the last declared rectangle.
+   *
+   * Caution: call this only if you are sure not other parts move/resize the widget or will cause flickering.
+   */
+  public attachPosition(): void {
+    if (this._attach.enabled || this.autoSize.enabled) {
+      return;
+    }
+
+    this._attach.enabled = true;
+    this._attach.unsub = this.onRectChange((actual) => {
+      if (!this._attach.rect) return;
+      const old = this._attach.rect;
+      if (
+        old.left !== actual.left ||
+        old.top !== actual.top ||
+        old.right !== actual.right ||
+        old.bottom !== actual.bottom
+      ) {
+        this.setPosition(old!);
+      }
     });
   }
 
-  public async __unsafe_setPosition(rect: Rect, ref: Frame): Promise<void> {
-    await invoke(SeelenCommand.SetSelfPosition, {
-      rect: {
-        left: Math.round(rect.left),
-        top: Math.round(rect.top),
-        right: Math.round(rect.right),
-        bottom: Math.round(rect.bottom),
-      },
-    });
-
-    // optimistically update state, as arrived event after change is async
-    ref.x = rect.left;
-    ref.y = rect.top;
-    ref.width = rect.right - rect.left;
-    ref.height = rect.bottom - rect.top;
+  public unattachPosition(): void {
+    this._attach.enabled = false;
+    this._attach.unsub?.();
+    this._attach.unsub = undefined;
   }
 
   /**
@@ -355,21 +409,25 @@ export class Widget {
         originY: alignY,
       });
 
-      await Widget.self.__unsafe_setPosition(
-        {
-          left: adjusted.x,
-          top: adjusted.y,
-          right: adjusted.x + adjusted.width,
-          bottom: adjusted.y + adjusted.height,
-        },
-        ref,
-      );
+      const newRect = {
+        left: adjusted.x,
+        top: adjusted.y,
+        right: adjusted.x + adjusted.width,
+        bottom: adjusted.y + adjusted.height,
+      };
+      if (this._attach.enabled) {
+        this._attach.rect = { ...newRect };
+      }
+      await Widget.self.__unsafe_setSelfPosition(newRect, ref);
     });
   }
 
   public async setPosition(rect: Rect): Promise<void> {
+    if (this._attach.enabled) {
+      this._attach.rect = { ...rect };
+    }
     await OPTIMISTIC_FRAME.runExclusive(async (frame) => {
-      await this.__unsafe_setPosition(rect, frame);
+      await this.__unsafe_setSelfPosition(rect, frame);
     });
   }
 
@@ -381,10 +439,10 @@ export class Widget {
   /** Will force foreground the widget */
   public async focus(): Promise<void> {
     if (this.runtimeState.firstFocus) {
-      await getCurrentWebview().setFocus();
+      await this.webview.setFocus();
       this.runtimeState.firstFocus = false;
     }
-    await invoke(SeelenCommand.RequestFocus, { hwnd: this.runtimeState.hwnd }).catch(() => {});
+    await invoke(SeelenCommand.RequestFocus, { hwnd: this.windowId }).catch(() => {});
   }
 
   public hide(): void {

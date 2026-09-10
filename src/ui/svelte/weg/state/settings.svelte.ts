@@ -195,14 +195,9 @@ async function updateWidgetPosition() {
   }
 }
 
-Widget.self.window.onMoved(({ payload }) => {
-  const rect = widgetRect.webviewRect;
-  if (payload.x !== rect.left || payload.y !== rect.top) {
-    Widget.self.setPosition(rect);
-  }
-});
-
 $effect.root(() => {
+  Widget.self.attachPosition();
+
   $effect(() => {
     const { size, padding, margin, spaceBetweenItems } = settings;
     const sheet = new RuntimeStyleSheet("@config/weg");

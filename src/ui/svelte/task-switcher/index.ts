@@ -7,7 +7,7 @@ import "@seelen-ui/lib/styles/reset.css";
 const root = document.getElementById("root")!;
 
 const widget = Widget.getCurrent();
-await widget.init();
+await widget.init({ normalizeDevicePixelRatio: true });
 await widget.window.setFocusable(true);
 
 mount(App, {

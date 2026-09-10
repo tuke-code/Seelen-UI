@@ -101,13 +101,9 @@ async function updateWidgetPosition() {
   }
 }
 
-Widget.self.window.onMoved(({ payload }) => {
-  if (payload.x !== widgetRect.left || payload.y !== widgetRect.top) {
-    Widget.self.setPosition(widgetRect);
-  }
-});
-
 $effect.root(() => {
+  Widget.self.attachPosition();
+
   $effect(() => {
     const { itemSize, margin, padding } = settingsState;
     const sheet = new RuntimeStyleSheet("@config/fancy-toolbar");
