@@ -1,44 +1,45 @@
 import { invoke, SeelenCommand, SeelenEvent, subscribe } from "@seelen-ui/lib";
 import { FolderType, type StartMenuItem } from "@seelen-ui/lib/types";
+import { lazyRune } from "libs/ui/svelte/utils";
 
-const [desktopInit, downloadsInit, documentsInit, musicInit, picturesInit, videosInit] = await Promise.all([
-  invoke(SeelenCommand.GetUserFolderContent, { folderType: FolderType.Desktop }),
-  invoke(SeelenCommand.GetUserFolderContent, { folderType: FolderType.Downloads }),
-  invoke(SeelenCommand.GetUserFolderContent, { folderType: FolderType.Documents }),
-  invoke(SeelenCommand.GetUserFolderContent, { folderType: FolderType.Music }),
-  invoke(SeelenCommand.GetUserFolderContent, { folderType: FolderType.Pictures }),
-  invoke(SeelenCommand.GetUserFolderContent, { folderType: FolderType.Videos }),
-]);
-
-let desktop = $state.raw(desktopInit);
-let downloads = $state.raw(downloadsInit);
-let documents = $state.raw(documentsInit);
-let music = $state.raw(musicInit);
-let pictures = $state.raw(picturesInit);
-let videos = $state.raw(videosInit);
+const desktop = lazyRune(() => invoke(SeelenCommand.GetUserFolderContent, { folderType: FolderType.Desktop }));
+const downloads = lazyRune(() => invoke(SeelenCommand.GetUserFolderContent, { folderType: FolderType.Downloads }));
+const documents = lazyRune(() => invoke(SeelenCommand.GetUserFolderContent, { folderType: FolderType.Documents }));
+const music = lazyRune(() => invoke(SeelenCommand.GetUserFolderContent, { folderType: FolderType.Music }));
+const pictures = lazyRune(() => invoke(SeelenCommand.GetUserFolderContent, { folderType: FolderType.Pictures }));
+const videos = lazyRune(() => invoke(SeelenCommand.GetUserFolderContent, { folderType: FolderType.Videos }));
 
 subscribe(SeelenEvent.UserFolderChanged, ({ payload: { ofFolder, content } }) => {
   switch (ofFolder) {
     case FolderType.Desktop:
-      desktop = content;
+      desktop.value = content;
       break;
     case FolderType.Downloads:
-      downloads = content;
+      downloads.value = content;
       break;
     case FolderType.Documents:
-      documents = content;
+      documents.value = content;
       break;
     case FolderType.Music:
-      music = content;
+      music.value = content;
       break;
     case FolderType.Pictures:
-      pictures = content;
+      pictures.value = content;
       break;
     case FolderType.Videos:
-      videos = content;
+      videos.value = content;
       break;
   }
 });
+
+await Promise.all([
+  desktop.init(),
+  downloads.init(),
+  documents.init(),
+  music.init(),
+  pictures.init(),
+  videos.init(),
+]);
 
 function pathAsItem(path: string): StartMenuItem {
   return {
@@ -52,12 +53,12 @@ function pathAsItem(path: string): StartMenuItem {
 
 const _foldersAsStartMenuItems = $derived.by(() => {
   return [
-    desktop.map(pathAsItem),
-    downloads.map(pathAsItem),
-    documents.map(pathAsItem),
-    music.map(pathAsItem),
-    pictures.map(pathAsItem),
-    videos.map(pathAsItem),
+    desktop.value.map(pathAsItem),
+    downloads.value.map(pathAsItem),
+    documents.value.map(pathAsItem),
+    music.value.map(pathAsItem),
+    pictures.value.map(pathAsItem),
+    videos.value.map(pathAsItem),
   ].flat();
 });
 

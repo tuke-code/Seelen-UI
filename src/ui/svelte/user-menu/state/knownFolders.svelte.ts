@@ -1,44 +1,45 @@
 import { invoke, SeelenCommand, SeelenEvent, subscribe } from "@seelen-ui/lib";
 import { FolderType } from "@seelen-ui/lib/types";
+import { lazyRune } from "libs/ui/svelte/utils";
 
-const [desktopInit, downloadsInit, documentsInit, musicInit, picturesInit, videosInit] = await Promise.all([
-  invoke(SeelenCommand.GetUserFolderContent, { folderType: FolderType.Desktop }),
-  invoke(SeelenCommand.GetUserFolderContent, { folderType: FolderType.Downloads }),
-  invoke(SeelenCommand.GetUserFolderContent, { folderType: FolderType.Documents }),
-  invoke(SeelenCommand.GetUserFolderContent, { folderType: FolderType.Music }),
-  invoke(SeelenCommand.GetUserFolderContent, { folderType: FolderType.Pictures }),
-  invoke(SeelenCommand.GetUserFolderContent, { folderType: FolderType.Videos }),
-]);
-
-let desktop = $state(desktopInit);
-let downloads = $state(downloadsInit);
-let documents = $state(documentsInit);
-let music = $state(musicInit);
-let pictures = $state(picturesInit);
-let videos = $state(videosInit);
+const desktop = lazyRune(() => invoke(SeelenCommand.GetUserFolderContent, { folderType: FolderType.Desktop }));
+const downloads = lazyRune(() => invoke(SeelenCommand.GetUserFolderContent, { folderType: FolderType.Downloads }));
+const documents = lazyRune(() => invoke(SeelenCommand.GetUserFolderContent, { folderType: FolderType.Documents }));
+const music = lazyRune(() => invoke(SeelenCommand.GetUserFolderContent, { folderType: FolderType.Music }));
+const pictures = lazyRune(() => invoke(SeelenCommand.GetUserFolderContent, { folderType: FolderType.Pictures }));
+const videos = lazyRune(() => invoke(SeelenCommand.GetUserFolderContent, { folderType: FolderType.Videos }));
 
 subscribe(SeelenEvent.UserFolderChanged, ({ payload: { ofFolder, content } }) => {
   switch (ofFolder) {
     case FolderType.Desktop:
-      desktop = content;
+      desktop.value = content;
       break;
     case FolderType.Downloads:
-      downloads = content;
+      downloads.value = content;
       break;
     case FolderType.Documents:
-      documents = content;
+      documents.value = content;
       break;
     case FolderType.Music:
-      music = content;
+      music.value = content;
       break;
     case FolderType.Pictures:
-      pictures = content;
+      pictures.value = content;
       break;
     case FolderType.Videos:
-      videos = content;
+      videos.value = content;
       break;
   }
 });
+
+await Promise.all([
+  desktop.init(),
+  downloads.init(),
+  documents.init(),
+  music.init(),
+  pictures.init(),
+  videos.init(),
+]);
 
 function pathAsItem(path: string) {
   return {
@@ -60,27 +61,27 @@ const _knownFolders: Record<FolderType, FolderData> = $derived.by(() => {
     },
     [FolderType.Desktop]: {
       icon: "HiOutlineDesktopComputer",
-      content: desktop.filter(predicate).map(pathAsItem),
+      content: desktop.value.filter(predicate).map(pathAsItem),
     },
     [FolderType.Downloads]: {
       icon: "PiDownloadSimpleBold",
-      content: downloads.filter(predicate).map(pathAsItem),
+      content: downloads.value.filter(predicate).map(pathAsItem),
     },
     [FolderType.Documents]: {
       icon: "IoDocumentsOutline",
-      content: documents.filter(predicate).map(pathAsItem),
+      content: documents.value.filter(predicate).map(pathAsItem),
     },
     [FolderType.Music]: {
       icon: "BsFileEarmarkMusic",
-      content: music.filter(predicate).map(pathAsItem),
+      content: music.value.filter(predicate).map(pathAsItem),
     },
     [FolderType.Pictures]: {
       icon: "IoImageOutline",
-      content: pictures.filter(predicate).map(pathAsItem),
+      content: pictures.value.filter(predicate).map(pathAsItem),
     },
     [FolderType.Videos]: {
       icon: "PiVideo",
-      content: videos.filter(predicate).map(pathAsItem),
+      content: videos.value.filter(predicate).map(pathAsItem),
     },
   };
 });

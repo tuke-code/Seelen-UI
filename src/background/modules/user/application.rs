@@ -7,7 +7,10 @@ use seelen_core::system_state::{FolderType, User};
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
-    sync::{Arc, LazyLock},
+    sync::{
+        Arc, LazyLock, Once,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 use tauri::Manager;
@@ -31,16 +34,20 @@ use super::domain::PictureQuality;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UserManagerEvent {
-    #[allow(dead_code)]
     UserUpdated,
     FolderChanged(FolderType),
 }
+
+/// Set once the first (potentially slow) initialization of the manager has finished.
+static INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug)]
 pub struct FolderDetails {
     pub path: PathBuf,
     pub content: Vec<PathBuf>,
-    _watcher: Debouncer<ReadDirectoryChangesWatcher, FileIdMap>,
+    /// `None` when the folder could not be watched (missing path, denied access, etc).
+    /// The already scanned content is still served in that case.
+    _watcher: Option<Debouncer<ReadDirectoryChangesWatcher, FileIdMap>>,
 }
 
 #[derive(Debug)]
@@ -55,13 +62,51 @@ unsafe impl Send for UserManagerEvent {}
 event_manager!(UserManager, UserManagerEvent);
 
 impl UserManager {
+    /// Blocks until the manager is built, prefer [`Self::is_initialized`] + this, or
+    /// [`Self::init_in_background`], on paths that shouldn't wait (like IPC commands).
     pub fn instance() -> &'static Arc<Mutex<Self>> {
         static USER_MANAGER: LazyLock<Arc<Mutex<UserManager>>> = LazyLock::new(|| {
-            Arc::new(Mutex::new(
-                UserManager::new().expect("Failed to create user manager"),
-            ))
+            let manager = Arc::new(Mutex::new(UserManager::new()));
+            INITIALIZED.store(true, Ordering::Release);
+            manager
         });
         &USER_MANAGER
+    }
+
+    /// Building the manager scans and starts watching all the known user folders, which
+    /// on some systems takes a long time (huge trees, slow/unavailable paths, domain
+    /// lookups on `get_logged_user`). Doing that lazily from an IPC command left widgets
+    /// like the power menu and the apps menu waiting forever on `get_user`, so the work
+    /// is done once on a background thread instead.
+    pub fn init_in_background() {
+        static SPAWNED: Once = Once::new();
+        SPAWNED.call_once(|| {
+            std::thread::spawn(|| {
+                let _ = Self::instance();
+                // widgets that got a placeholder while this was running are updated by these
+                Self::send(UserManagerEvent::UserUpdated);
+                for &folder_type in FolderType::values() {
+                    Self::send(UserManagerEvent::FolderChanged(folder_type));
+                }
+            });
+        });
+    }
+
+    pub fn is_initialized() -> bool {
+        INITIALIZED.load(Ordering::Acquire)
+    }
+
+    /// Placeholder served while [`Self::init_in_background`] is still running.
+    pub fn unknown_user() -> User {
+        User {
+            name: "???".to_string(),
+            domain: String::new(),
+            profile_home_path: PathBuf::new(),
+            email: None,
+            one_drive_path: None,
+            profile_picture_path: None,
+            xbox_gamertag: None,
+        }
     }
 
     fn get_path_from_folder(folder_type: &FolderType) -> Option<PathBuf> {
@@ -190,9 +235,10 @@ impl UserManager {
     }
 
     fn create_folder_watcher(
+        path: &PathBuf,
         folder_type: FolderType,
     ) -> Result<Debouncer<ReadDirectoryChangesWatcher, FileIdMap>> {
-        let debouncer = new_debouncer(
+        let mut debouncer = new_debouncer(
             Duration::from_millis(1000),
             None,
             move |result: DebounceEventResult| match result {
@@ -204,6 +250,7 @@ impl UserManager {
                 }
             },
         )?;
+        debouncer.watch(path, RecursiveMode::Recursive)?;
         Ok(debouncer)
     }
 
@@ -220,31 +267,47 @@ impl UserManager {
         Ok(())
     }
 
-    pub fn new() -> Result<Self> {
+    /// Infallible on purpose: this runs lazily from the `get_user` and
+    /// `get_user_folder_content` commands, so panicking here would leave those IPC calls
+    /// pending forever and poison the lazy instance for every later call. Folders that
+    /// can't be read or watched are skipped or degraded instead.
+    pub fn new() -> Self {
         let mut folders = HashMap::new();
 
         for &folder_type in FolderType::values() {
-            if let Some(path) = Self::get_path_from_folder(&folder_type) {
-                let content =
-                    Self::get_folder_content(path.clone(), folder_type).unwrap_or_default();
-                let mut watcher = Self::create_folder_watcher(folder_type)?;
-                watcher.watch(&path, RecursiveMode::Recursive)?;
+            let Some(path) = Self::get_path_from_folder(&folder_type) else {
+                continue;
+            };
 
-                folders.insert(
-                    folder_type,
-                    FolderDetails {
-                        path,
-                        content,
-                        _watcher: watcher,
-                    },
-                );
+            if !path.is_dir() {
+                log::warn!("Skipping user folder {folder_type:?}, missing directory: {path:?}");
+                continue;
             }
+
+            let content = Self::get_folder_content(path.clone(), folder_type).unwrap_or_default();
+            // watching is best effort, a folder that can't be watched is still listed
+            let watcher = match Self::create_folder_watcher(&path, folder_type) {
+                Ok(watcher) => Some(watcher),
+                Err(err) => {
+                    log::error!("Failed to watch user folder {folder_type:?} ({path:?}): {err:?}");
+                    None
+                }
+            };
+
+            folders.insert(
+                folder_type,
+                FolderDetails {
+                    path,
+                    content,
+                    _watcher: watcher,
+                },
+            );
         }
 
-        Ok(Self {
+        Self {
             user: Self::get_logged_user(),
             folders,
-        })
+        }
     }
 }
 
