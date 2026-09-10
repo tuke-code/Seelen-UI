@@ -44,6 +44,7 @@ define_app_errors!(
     TimeFormat(time::error::InvalidFormatDescription);
     TimeOffset(time::error::IndeterminateOffset);
     Positioning(positioning::error::Error);
+    CrossbeamRecv(crossbeam_channel::RecvError);
 );
 
 impl std::fmt::Debug for ServiceError {
@@ -98,6 +99,12 @@ impl std::fmt::Debug for ServiceError {
 impl std::fmt::Display for ServiceError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:?}")
+    }
+}
+
+impl<T> From<crossbeam_channel::SendError<T>> for ServiceError {
+    fn from(err: crossbeam_channel::SendError<T>) -> Self {
+        err.to_string().into()
     }
 }
 

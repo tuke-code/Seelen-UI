@@ -17,7 +17,7 @@ use cli::handle_console_client;
 use error::Result;
 use itertools::Itertools;
 use logger::SluServiceLogger;
-use shutdown::restore_native_taskbar;
+use shutdown::{restore_native_taskbar, start_shutdown_listener};
 use slu_ipc::{AppIpc, IPC, ServiceIpc};
 use std::sync::{LazyLock, OnceLock, atomic::AtomicBool};
 use string_utils::WindowsString;
@@ -78,6 +78,7 @@ pub fn setup() -> Result<()> {
     WindowsApi::set_process_dpi_aware()?;
     WindowsApi::enable_privilege(SE_TCB_NAME)?;
     ServiceIpc::start(crate::cli::processing::process_action)?;
+    start_shutdown_listener()?;
 
     let app_just_launched = if !AppIpc::can_stablish_connection() {
         WindowsApi::wait_for_native_shell();

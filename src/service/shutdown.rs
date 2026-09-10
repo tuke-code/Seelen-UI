@@ -1,12 +1,18 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use windows::Win32::{
-    Foundation::HWND,
-    UI::WindowsAndMessaging::{SW_HIDE, SW_SHOWNORMAL},
+    Foundation::{HWND, LPARAM, LRESULT, WPARAM},
+    System::LibraryLoader::GetModuleHandleW,
+    UI::WindowsAndMessaging::{
+        CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, MSG, PostQuitMessage,
+        RegisterClassW, SW_HIDE, SW_SHOWNORMAL, TranslateMessage, WINDOW_EX_STYLE, WINDOW_STYLE,
+        WM_DESTROY, WM_ENDSESSION, WM_QUERYENDSESSION, WNDCLASSW,
+    },
 };
 
 use crate::{
     error::Result,
+    string_utils::WindowsString,
     windows_api::{
         WindowsApi,
         app_bar::{AppBarData, AppBarDataState},
@@ -61,5 +67,89 @@ pub fn restore_native_taskbar() -> Result<()> {
         AppBarData::from_handle(hwnd).set_state(AppBarDataState::AlwaysOnTop);
         WindowsApi::show_window_async(hwnd.0 as isize, SW_SHOWNORMAL.0)?;
     }
+    Ok(())
+}
+
+unsafe extern "system" fn shutdown_window_proc(
+    hwnd: HWND,
+    msg: u32,
+    w_param: WPARAM,
+    l_param: LPARAM,
+) -> LRESULT {
+    unsafe {
+        match msg {
+            // sent by the OS when it wants to shut down/log off/quiesce the process
+            // (system shutdown, user logoff, or a package update needing us to exit).
+            // Reacting here lets us call `exit()` promptly instead of idling in the
+            // exit channel wait until the OS times out and force-kills us.
+            WM_QUERYENDSESSION | WM_ENDSESSION => {
+                log::info!("Received shutdown/quiesce request (msg={msg}), exiting service");
+                crate::exit(0);
+            }
+            WM_DESTROY => PostQuitMessage(0),
+            _ => {}
+        }
+        DefWindowProcW(hwnd, msg, w_param, l_param)
+    }
+}
+
+/// will lock until the window is closed
+unsafe fn create_shutdown_window(done: &crossbeam_channel::Sender<()>) -> Result<()> {
+    unsafe {
+        let title = WindowsString::from_str("Seelen UI Service Shutdown Window");
+        let class = WindowsString::from_str("SeelenServiceShutdownWindow");
+
+        let h_module = GetModuleHandleW(None)?;
+
+        let wnd_class = WNDCLASSW {
+            lpfnWndProc: Some(shutdown_window_proc),
+            hInstance: h_module.into(),
+            lpszClassName: class.as_pcwstr(),
+            ..Default::default()
+        };
+
+        RegisterClassW(&wnd_class);
+
+        let hwnd = CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            class.as_pcwstr(),
+            title.as_pcwstr(),
+            WINDOW_STYLE::default(),
+            0,
+            0,
+            0,
+            0,
+            None,
+            None,
+            Some(wnd_class.hInstance),
+            None,
+        )?;
+
+        done.send(())?;
+        let mut msg = MSG::default();
+
+        // GetMessageW will run until PostQuitMessage(0) is called
+        while GetMessageW(&mut msg, Some(hwnd), 0, 0).into() {
+            let _ = TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+        Ok(())
+    }
+}
+
+/// Spawns a hidden top-level window on its own thread whose only purpose is receiving
+/// `WM_QUERYENDSESSION`/`WM_ENDSESSION`, so the service can gracefully exit when the OS
+/// tries to quiesce it (shutdown, logoff, package update) instead of being force-killed
+/// while idling and reported as a hang.
+pub fn start_shutdown_listener() -> Result<()> {
+    let (tx, rx) = crossbeam_channel::bounded(1);
+    std::thread::Builder::new()
+        .name("Shutdown Window".to_string())
+        .spawn(move || {
+            if let Err(err) = unsafe { create_shutdown_window(&tx) } {
+                log::error!("Shutdown window thread failed: {err:?}");
+            }
+        })?;
+    rx.recv()?;
     Ok(())
 }
