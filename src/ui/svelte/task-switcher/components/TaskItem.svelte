@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { UserAppWindow } from "@seelen-ui/lib/types";
   import { invoke, SeelenCommand } from "@seelen-ui/lib";
-  import { globalState } from "../state.svelte";
+  import { globalState } from "../state/index.svelte.ts";
   import { FileIcon, Icon } from "libs/ui/svelte/components/Icon";
   import MissingIcon from "libs/ui/svelte/components/Icon/MissingIcon.svelte";
 

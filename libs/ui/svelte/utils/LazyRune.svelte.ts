@@ -29,7 +29,7 @@
  * ```
  */
 export class LazyRune<T> {
-  private _value = $state<T>();
+  private _value = $state.raw<T>();
   private initialized = false;
 
   constructor(private initializer: () => Promise<T> | T) {

@@ -1,16 +1,13 @@
-import { invoke, SeelenCommand, SeelenEvent, Settings, subscribe, Widget } from "@seelen-ui/lib";
-import { lazyRune } from "libs/ui/svelte/utils/LazyRune.svelte.ts";
+import { invoke, SeelenCommand } from "@seelen-ui/lib";
+import { debounce } from "lodash";
 import z from "zod";
+import { focusedWinId, monitors, previews, settings, widget, windows } from "./getters.svelte.ts";
 
-const widget = Widget.getCurrent();
+export { focusedWinId, monitors, previews, settings, widget, windows };
 
 const WidgetConfigSchema = z.object({
   onlyOnActiveMonitor: z.boolean(),
 });
-
-let settings = lazyRune(() => Settings.getAsync());
-await Settings.onChange((s) => (settings.value = s));
-await settings.init();
 
 const widgetConfig = $derived.by(
   () =>
@@ -23,29 +20,7 @@ const widgetConfig = $derived.by(
 let showing = $state(false);
 let autoConfirm = $state(false);
 
-let windows = lazyRune(async () =>
-  (await invoke(SeelenCommand.GetUserAppWindows)).toSorted(
-    (a, b) => b.lastForegroundAt - a.lastForegroundAt,
-  )
-);
-subscribe(SeelenEvent.UserAppWindowsChanged, ({ payload }) => {
-  windows.value = payload.toSorted((a, b) => b.lastForegroundAt - a.lastForegroundAt);
-});
-
-let previews = lazyRune(() => invoke(SeelenCommand.GetUserAppWindowsPreviews));
-subscribe(SeelenEvent.UserAppWindowsPreviewsChanged, previews.setByPayload);
-
-let focusedWinId = lazyRune(async () => (await invoke(SeelenCommand.GetFocusedApp)).hwnd);
-subscribe(SeelenEvent.GlobalFocusChanged, (e) => {
-  focusedWinId.value = e.payload.hwnd;
-});
-
-let monitors = lazyRune(() => invoke(SeelenCommand.SystemGetMonitors));
-subscribe(SeelenEvent.SystemMonitorsChanged, monitors.setByPayload);
-
 let desiredPosition = $state<{ x: number; y: number } | null>(null);
-
-await Promise.all([windows.init(), previews.init(), focusedWinId.init(), monitors.init()]);
 
 let selectedWindow = $state<number | null>(focusedWinId.value ?? null);
 
@@ -158,16 +133,8 @@ $effect.root(() => {
 
     if (showing) {
       widget.show().then(async () => {
-        if (cancelled) {
-          return;
-        }
-
-        // double check for fast keyboard trigger
-        let isPressing = await invoke(SeelenCommand.GetKeyState, { key: "Alt" });
-        if (isPressing) {
+        if (!cancelled) {
           await widget.focus();
-        } else {
-          onAltKeyUp();
         }
       });
     } else {
@@ -179,11 +146,42 @@ $effect.root(() => {
     };
   });
 
-  // Hide when focus leaves the widget
-  $effect(() => {
+  const hideIfNotFocused = debounce(() => {
     if (focusedWinId.value !== widget.windowId) {
       showing = false;
     }
+  }, 100);
+  // Hide when focus leaves the widget
+  $effect(() => {
+    focusedWinId.value; // subscribed
+    hideIfNotFocused(); // debounced to avoid inmediate hidden if focused changed while opening the widget
+  });
+
+  // Poll the hardware Alt key state instead of relying on keyup events,
+  // since the widget-focus trick fakes an Alt keydown that never reaches window.onkeyup.
+  $effect(() => {
+    if (!showing) {
+      return;
+    }
+
+    let cancelled = false;
+    let wasAltDown = true;
+
+    const poll = async () => {
+      while (!cancelled) {
+        const isAltDown = await invoke(SeelenCommand.GetKeyState, { key: "Alt" });
+        if (wasAltDown && !isAltDown) {
+          onAltKeyUp();
+        }
+        wasAltDown = isAltDown;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    };
+    poll();
+
+    return () => {
+      cancelled = true;
+    };
   });
 });
 
@@ -235,11 +233,5 @@ widget.onTrigger((payload) => {
 window.onkeydown = (e) => {
   if (e.key === "Escape") {
     showing = false;
-  }
-};
-
-window.onkeyup = (e) => {
-  if (e.key === "Alt") {
-    onAltKeyUp();
   }
 };

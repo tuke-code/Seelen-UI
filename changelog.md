@@ -12,6 +12,7 @@
 
 - notifications behaviors
 - apps menu and power menu stuck on mounting when the user folders indexing was slow or failed.
+- apps menu inmediately dissmising.
 
 ## [2.8.4]
 

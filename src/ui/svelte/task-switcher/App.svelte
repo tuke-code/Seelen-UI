@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Widget } from "@seelen-ui/lib";
-  import { globalState } from "./state.svelte";
+  import { globalState } from "./state/index.svelte.ts";
   import TaskItem from "./components/TaskItem.svelte";
 
   $effect(() => {
