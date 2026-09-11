@@ -273,8 +273,6 @@ class State {
   mergeFolders = mergeFolders;
   disbandFolder = disbandFolder;
 
-  desiredMonitorId = $state<string | null>(null);
-
   view = $state(StartView.Favorites);
 
   version = $state<number>(0);

@@ -8,6 +8,10 @@
 - Light/dark mode toggle on quick settings widget.
 - Night Light toggle on quick settings widget.
 
+### enhancements
+
+- show apps menu on the monitor where the cursor is positioned.
+
 ### fix
 
 - notifications behaviors

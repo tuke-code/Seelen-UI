@@ -3,11 +3,21 @@ import type { PhysicalMonitor } from "@seelen-ui/lib/types";
 import { globalState } from "./mod.svelte";
 import { StartDisplayMode, StartView } from "../constants";
 
+let desiredPosition = $state<{ x: number; y: number } | null>(null);
+
+// Monitor under the cursor position that triggered the menu, falling back to primary
 let monitorToShow = $derived.by(() => {
+  const pos = desiredPosition;
   let targetMonitor: PhysicalMonitor | undefined;
 
-  if (globalState.desiredMonitorId) {
-    targetMonitor = globalState.monitors.find((m) => m.id === globalState.desiredMonitorId);
+  if (pos) {
+    targetMonitor = globalState.monitors.find(
+      (m) =>
+        m.rect.left <= pos.x &&
+        pos.x < m.rect.right &&
+        m.rect.top <= pos.y &&
+        pos.y < m.rect.bottom,
+    );
   }
 
   // Fallback to primary monitor if not found or not specified
@@ -57,9 +67,10 @@ $effect.root(() => {
   });
 });
 
-export async function onTriggered(monitorId?: string | null) {
+export async function onTriggered(cursorPosition?: { x: number; y: number } | null) {
+  desiredPosition = cursorPosition ?? null;
+
   globalState.view = StartView.Favorites;
-  globalState.desiredMonitorId = monitorId || null;
   globalState.version++; // trigger reactive updates
 
   await Widget.self.show();
