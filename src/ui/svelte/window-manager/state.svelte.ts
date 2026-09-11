@@ -142,8 +142,9 @@ const widgetRect = $derived.by(() => {
 });
 
 $effect.root(() => {
+  Widget.self.attachPosition();
   $effect(() => {
-    Widget.getCurrent().setPosition(widgetRect);
+    Widget.self.setPosition(widgetRect);
   });
 });
 

@@ -217,33 +217,30 @@ export class Widget extends WidgetBasics {
     // below fires forever. Chain calls onto this promise so only one runs at a time.
     let queue = Promise.resolve();
 
-    const normalizeDpr = () => {
+    const normalizeDpr = (retry: number = 0) => {
       queue = queue.then(async () => {
         const dpr = globalThis.devicePixelRatio;
-        console.debug(`normalizeDpr: dpr = ${dpr}, current zoom = ${zoom}`);
         if (dpr === 1) {
           return;
         }
+
+        console.debug(`normalizeDpr: dpr = ${dpr}, current zoom = ${zoom}`);
 
         zoom = zoom / dpr;
         await this.webview.setZoom(zoom);
         console.debug(`Zoom compensation set to ${zoom}`);
 
-        // retest, setZoom's effect on devicePixelRatio is not necessarily synchronous
-        await new Promise((resolve) => setTimeout(resolve, 100));
         if (globalThis.devicePixelRatio !== 1) {
           console.warn(
             `DPR normalization failed! dpr = ${globalThis.devicePixelRatio}, zoom applied = ${zoom}`,
           );
+          if (retry < 5) {
+            normalizeDpr(retry + 1);
+          }
         }
       });
       return queue;
     };
-
-    await this.window.onScaleChanged(({ payload }) => {
-      console.debug(`Scale changed to ${payload.scaleFactor}, normalizing...`);
-      normalizeDpr();
-    });
 
     // onScaleChanged relies on WM_DPICHANGED, which is not reliably emitted for a
     // window that is repositioned while hidden (e.g. moved to another monitor before
@@ -251,10 +248,11 @@ export class Widget extends WidgetBasics {
     // factor whenever the window's position or size changes.
     const recheckDpr = debounce(() => {
       if (globalThis.devicePixelRatio !== 1) {
-        console.debug(`DPR is ${globalThis.devicePixelRatio} after move/resize, normalizing...`);
         normalizeDpr();
       }
-    }, 100);
+    }, 33);
+
+    await this.window.onScaleChanged(recheckDpr);
     this.onMoved(recheckDpr);
     this.onResized(recheckDpr);
 
