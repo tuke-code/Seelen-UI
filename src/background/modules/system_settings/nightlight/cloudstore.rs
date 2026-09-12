@@ -87,7 +87,9 @@ pub fn cloudstore_unwrap(data: &[u8]) -> Result<(u64, &[u8]), BondError> {
         }
     }
 
-    let ts = timestamp.ok_or(BondError::MissingField(0))?;
+    // Bond's CompactBinary format omits fields holding their default value, so a blob
+    // with a zero timestamp legitimately has no field 0 here — default it instead of failing.
+    let ts = timestamp.unwrap_or(0);
     let bytes = payload.ok_or(BondError::MissingField(1))?;
     Ok((ts, bytes))
 }
