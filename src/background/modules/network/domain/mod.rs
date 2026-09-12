@@ -2,14 +2,10 @@ pub mod types;
 
 use itertools::Itertools;
 use seelen_core::system_state::{AdapterStatus, NetworkAdapter};
-use serde::Serialize;
 use types::InterfaceType;
-use windows::{
-    Networking::NetworkOperators::TetheringOperationalState,
-    Win32::{
-        NetworkManagement::{IpHelper::IP_ADAPTER_ADDRESSES_LH, Ndis::IfOperStatusUp},
-        Networking::WinSock::{AF_INET, AF_INET6, SOCKADDR_IN, SOCKADDR_IN6, inet_ntop},
-    },
+use windows::Win32::{
+    NetworkManagement::{IpHelper::IP_ADAPTER_ADDRESSES_LH, Ndis::IfOperStatusUp},
+    Networking::WinSock::{AF_INET, AF_INET6, SOCKADDR_IN, SOCKADDR_IN6, inet_ntop},
 };
 
 use crate::{error::Result, windows_api::string_utils::WindowsString};
@@ -124,37 +120,5 @@ pub fn adapter_to_slu_net_adapter(adapter: &IP_ADAPTER_ADDRESSES_LH) -> Result<N
                 .to_string()
                 .replace("IF_TYPE_", ""),
         })
-    }
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Hotspot {
-    pub clients: u32,
-    pub max_clients: u32,
-    pub state: HotspotState,
-    pub ssid: Option<String>,
-    pub passphrase: Option<String>,
-    pub band: String,
-    pub encryption: String,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum HotspotState {
-    Unknown,
-    On,
-    Off,
-    InTransition,
-}
-
-impl From<TetheringOperationalState> for HotspotState {
-    fn from(state: TetheringOperationalState) -> Self {
-        match state {
-            TetheringOperationalState::On => HotspotState::On,
-            TetheringOperationalState::Off => HotspotState::Off,
-            TetheringOperationalState::InTransition => HotspotState::InTransition,
-            _ => HotspotState::Unknown,
-        }
     }
 }

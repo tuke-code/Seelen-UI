@@ -1,6 +1,6 @@
 <script lang="ts">
   import { invoke, SeelenCommand } from "@seelen-ui/lib";
-  import { RadioDeviceKind, type RadioDevice } from "@seelen-ui/lib/types";
+  import { HotspotState, RadioDeviceKind, type RadioDevice } from "@seelen-ui/lib/types";
   import { Icon } from "libs/ui/svelte/components/Icon";
   import { state } from "../state.svelte";
   import type { IconName } from "libs/ui/icons";
@@ -46,6 +46,13 @@
     });
   }
 
+  async function toggleHotspot() {
+    if (!state.hotspot) return;
+    await invoke(SeelenCommand.SetNetworkHotspotState, {
+      enabled: state.hotspot.state !== HotspotState.on,
+    });
+  }
+
   async function toggleHdr() {
     const newState = !hdrEnabled;
     await Promise.all(
@@ -79,6 +86,19 @@
       <span class="radio-button-label">{getRadioLabel(radio.kind)}</span>
     </button>
   {/each}
+
+  {#if state.hotspot}
+    <button
+      class="radio-button"
+      data-skin={state.hotspot.state === HotspotState.on ? "solid" : "default"}
+      disabled={state.hotspot.state === HotspotState.inTransition}
+      onclick={toggleHotspot}
+      title={`${$t("hotspot")} - ${state.hotspot.state === HotspotState.on ? $t("enabled") : $t("disabled")}`}
+    >
+      <Icon iconName="MdWifiTethering" />
+      <span class="radio-button-label">{$t("hotspot")}</span>
+    </button>
+  {/if}
 
   {#if hdrMonitors.length > 0}
     <button

@@ -21,6 +21,7 @@ export enum SeelenEvent {
   NetworkAdapters = "network-adapters",
   NetworkInternetConnection = "network-internet-connection",
   NetworkWlanScanned = "wlan-scanned",
+  NetworkHotspotChanged = "network-hotspot-changed",
   PowerStatus = "power-status",
   PowerMode = "power-mode",
   BatteriesStatus = "batteries-status",

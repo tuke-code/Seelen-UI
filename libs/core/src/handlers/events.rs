@@ -71,6 +71,7 @@ slu_events_declaration! {
     NetworkAdapters(Vec<NetworkAdapter>) as "network-adapters",
     NetworkInternetConnection(bool) as "network-internet-connection",
     NetworkWlanScanned(Vec<WlanBssEntry>) as "wlan-scanned",
+    NetworkHotspotChanged(Option<Hotspot>) as "network-hotspot-changed",
 
     PowerStatus(PowerStatus) as "power-status",
     PowerMode(PowerMode) as "power-mode",

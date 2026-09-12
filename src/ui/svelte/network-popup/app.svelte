@@ -5,6 +5,8 @@
   import Icon from "libs/ui/svelte/components/Icon/Icon.svelte";
   import { t } from "./i18n";
   import WlanEntry from "./components/WlanEntry.svelte";
+  import HotspotEntry from "./components/HotspotEntry.svelte";
+  import HotspotView from "./components/HotspotView.svelte";
 
   // Group and sort entries
   const { connected, known, unknown, hidden } = $derived.by(() => {
@@ -69,77 +71,88 @@
 </script>
 
 <div class="slu-std-popover network-popup">
-  {#if !wifiRadio}
-    <div class="network-no-adapter">
-      {$t("no_adapter")}
-    </div>
+  {#if globalState.view === "hotspot"}
+    <HotspotView onBack={() => (globalState.view = "main")} />
   {:else}
-    <div class="network-radio-control">
-      <div class="network-radio-label">
-        <Icon iconName="FaWifi" />
-        <span>Wi-Fi</span>
+    {#if !wifiRadio}
+      <div class="network-no-adapter">
+        {$t("no_adapter")}
       </div>
-      <label class="network-radio-switch">
+    {:else}
+      <div class="network-radio-control">
+        <div class="network-radio-label">
+          <Icon iconName="FaWifi" />
+          <span>Wi-Fi</span>
+        </div>
         <input
           type="checkbox"
           data-skin="switch"
           checked={wifiRadio.is_enabled}
           onchange={toggleWifiRadio}
         />
-      </label>
-    </div>
-  {/if}
-
-  {#if wifiRadio?.is_enabled}
-    {#if connected}
-      <div class="network-section">
-        <div class="network-section-title">{$t("connected")}</div>
-        <div class="network-section-entries">
-          <WlanEntry group={connected} />
-        </div>
       </div>
-    {/if}
 
-    {#if known.length > 0}
-      <div class="network-section">
-        <div class="network-section-title">{$t("saved")}</div>
-        <div class="network-section-entries">
-          {#each known as group (group[0].ssid)}
-            <WlanEntry {group} />
-          {/each}
-        </div>
-      </div>
-    {/if}
-
-    <div class="network-section">
-      <div class="network-section-title">
-        <span>{$t("available")}</span>
-        {#if globalState.isScanning}
-          <div class="network-scanning">
-            <Icon iconName="TbRefresh" />
+      {#if globalState.hotspot}
+        <div class="network-section">
+          <div class="network-section-title">{$t("hotspot.title")}</div>
+          <div class="network-section-entries">
+            <HotspotEntry />
           </div>
-        {/if}
-      </div>
-      <div class="network-section-entries">
-        {#if unknown.length === 0 && hidden.length === 0}
-          <div class="network-empty">{$t("not_found")}</div>
-        {:else}
-          {#each unknown as group (group[0].ssid)}
-            <WlanEntry {group} />
-          {/each}
-          {#if hidden.length > 0}
-            <WlanEntry group={hidden} />
-          {/if}
-        {/if}
-      </div>
-    </div>
+        </div>
+      {/if}
+    {/if}
 
     {#if wifiRadio?.is_enabled}
-      <div class="network-footer">
-        <button data-skin="transparent" onclick={openNetworkSettings}>
-          {$t("more")}
-        </button>
+      {#if connected}
+        <div class="network-section">
+          <div class="network-section-title">{$t("connected")}</div>
+          <div class="network-section-entries">
+            <WlanEntry group={connected} />
+          </div>
+        </div>
+      {/if}
+
+      {#if known.length > 0}
+        <div class="network-section">
+          <div class="network-section-title">{$t("saved")}</div>
+          <div class="network-section-entries">
+            {#each known as group (group[0].ssid)}
+              <WlanEntry {group} />
+            {/each}
+          </div>
+        </div>
+      {/if}
+
+      <div class="network-section">
+        <div class="network-section-title">
+          <span>{$t("available")}</span>
+          {#if globalState.isScanning}
+            <div class="network-scanning">
+              <Icon iconName="TbRefresh" />
+            </div>
+          {/if}
+        </div>
+        <div class="network-section-entries">
+          {#if unknown.length === 0 && hidden.length === 0}
+            <div class="network-empty">{$t("not_found")}</div>
+          {:else}
+            {#each unknown as group (group[0].ssid)}
+              <WlanEntry {group} />
+            {/each}
+            {#if hidden.length > 0}
+              <WlanEntry group={hidden} />
+            {/if}
+          {/if}
+        </div>
       </div>
+
+      {#if wifiRadio?.is_enabled}
+        <div class="network-footer">
+          <button data-skin="transparent" onclick={openNetworkSettings}>
+            {$t("more")}
+          </button>
+        </div>
+      {/if}
     {/if}
   {/if}
 </div>

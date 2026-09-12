@@ -1,5 +1,5 @@
 import { invoke, SeelenCommand, SeelenEvent, Settings, subscribe, Widget } from "@seelen-ui/lib";
-import { RadioDeviceKind, type WlanBssEntry } from "@seelen-ui/lib/types";
+import { type Hotspot, RadioDeviceKind, type WlanBssEntry } from "@seelen-ui/lib/types";
 import { locale } from "./i18n/index.ts";
 import { lazyRune } from "libs/ui/svelte/utils/LazyRune.svelte.ts";
 
@@ -24,9 +24,14 @@ let radios = lazyRune(() => invoke(SeelenCommand.GetRadios));
 subscribe(SeelenEvent.RadiosChanged, radios.setByPayload);
 await radios.init();
 
+let hotspot = lazyRune(() => invoke(SeelenCommand.GetNetworkHotspot));
+subscribe(SeelenEvent.NetworkHotspotChanged, hotspot.setByPayload);
+await hotspot.init();
+
 let isScanning = $state(false);
 let selectedSsid = $state<string | null>(null);
 let scanInterval: ReturnType<typeof setInterval> | null = null;
+let currentView = $state<"main" | "hotspot">("main");
 
 widget.window.onFocusChanged((e) => {
   if (e.payload) {
@@ -34,6 +39,7 @@ widget.window.onFocusChanged((e) => {
   } else {
     isScanning = false;
     selectedSsid = null;
+    currentView = "main";
   }
 });
 
@@ -59,6 +65,18 @@ class State {
 
   get wlanBssEntries() {
     return wlanBssEntries;
+  }
+
+  get hotspot(): Hotspot | null {
+    return hotspot.value;
+  }
+
+  get view() {
+    return currentView;
+  }
+
+  set view(value: "main" | "hotspot") {
+    currentView = value;
   }
 
   get isScanning() {

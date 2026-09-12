@@ -1,6 +1,6 @@
 use std::sync::Once;
 
-use seelen_core::handlers::SeelenEvent;
+use seelen_core::{handlers::SeelenEvent, system_state::Hotspot};
 use windows::Win32::Networking::NetworkListManager::{
     NLM_CONNECTIVITY_IPV4_INTERNET, NLM_CONNECTIVITY_IPV6_INTERNET,
 };
@@ -27,6 +27,9 @@ fn get_network_manager() -> &'static NetworkManager {
                 emit_to_webviews(SeelenEvent::NetworkDefaultLocalIp, ip);
                 emit_to_webviews(SeelenEvent::NetworkInternetConnection, has_internet);
             }
+            NetworkManagerEvent::HotspotChanged(hotspot) => {
+                emit_to_webviews(SeelenEvent::NetworkHotspotChanged, hotspot);
+            }
         });
     });
     NetworkManager::instance()
@@ -42,6 +45,18 @@ pub fn get_network_default_local_ip() -> Result<String> {
 pub fn get_network_adapters() -> Result<Vec<seelen_core::system_state::NetworkAdapter>> {
     get_network_manager();
     NetworkManager::get_adapters()
+}
+
+#[tauri::command(async)]
+pub fn get_network_hotspot() -> Result<Option<Hotspot>> {
+    get_network_manager();
+    NetworkManager::get_hotspot()
+}
+
+#[tauri::command(async)]
+pub fn set_network_hotspot_state(enabled: bool) -> Result<()> {
+    get_network_manager();
+    NetworkManager::toggle_hotspot(enabled)
 }
 
 #[tauri::command(async)]

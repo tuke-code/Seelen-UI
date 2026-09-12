@@ -1,5 +1,5 @@
 import { invoke, SeelenCommand, SeelenEvent, Settings, subscribe } from "@seelen-ui/lib";
-import type { MediaDevice, PhysicalMonitor, RadioDevice } from "@seelen-ui/lib/types";
+import type { Hotspot, MediaDevice, PhysicalMonitor, RadioDevice } from "@seelen-ui/lib/types";
 import { lazyRune } from "libs/ui/svelte/utils";
 import { locale } from "./i18n/index.ts";
 
@@ -28,6 +28,9 @@ subscribe(SeelenEvent.MediaDevices, ({ payload: [inputs, outputs] }) => {
 const radios = lazyRune(() => invoke(SeelenCommand.GetRadios));
 subscribe(SeelenEvent.RadiosChanged, radios.setByPayload);
 
+const hotspot = lazyRune(() => invoke(SeelenCommand.GetNetworkHotspot));
+subscribe(SeelenEvent.NetworkHotspotChanged, hotspot.setByPayload);
+
 const monitors = lazyRune(() => invoke(SeelenCommand.SystemGetMonitors));
 subscribe(SeelenEvent.SystemMonitorsChanged, monitors.setByPayload);
 
@@ -40,6 +43,7 @@ await Promise.all([
   brightness.init(),
   mediaDevices.init(),
   radios.init(),
+  hotspot.init(),
   monitors.init(),
   darkMode.init(),
   nightLightEnabled.init(),
@@ -58,6 +62,9 @@ class State {
   }
   get radios(): RadioDevice[] {
     return radios.value;
+  }
+  get hotspot(): Hotspot | null {
+    return hotspot.value;
   }
   get monitors(): PhysicalMonitor[] {
     return monitors.value;

@@ -45,3 +45,27 @@ pub struct NetworkAdapter {
     pub gateway: Option<String>,
     pub mac: String,
 }
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(feature = "gen-binds", not(feature = "salvo")), derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct Hotspot {
+    pub clients: u32,
+    pub max_clients: u32,
+    pub state: HotspotState,
+    pub ssid: Option<String>,
+    pub passphrase: Option<String>,
+    pub band: String,
+    pub encryption: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(feature = "gen-binds", not(feature = "salvo")), derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(all(feature = "gen-binds", not(feature = "salvo")), ts(repr(enum = name)))]
+pub enum HotspotState {
+    Unknown,
+    On,
+    Off,
+    InTransition,
+}

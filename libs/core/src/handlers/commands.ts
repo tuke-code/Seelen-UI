@@ -125,6 +125,8 @@ export enum SeelenCommand {
   GetNetworkDefaultLocalIp = "get_network_default_local_ip",
   GetNetworkAdapters = "get_network_adapters",
   GetNetworkInternetConnection = "get_network_internet_connection",
+  GetNetworkHotspot = "get_network_hotspot",
+  SetNetworkHotspotState = "set_network_hotspot_state",
   GetSystemTrayIcons = "get_system_tray_icons",
   SendSystemTrayIconAction = "send_system_tray_icon_action",
   GetNotifications = "get_notifications",

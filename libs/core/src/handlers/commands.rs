@@ -264,6 +264,8 @@ slu_commands_declaration! {
     GetNetworkDefaultLocalIp = get_network_default_local_ip() -> String,
     GetNetworkAdapters = get_network_adapters() -> Vec<NetworkAdapter>,
     GetNetworkInternetConnection = get_network_internet_connection() -> bool,
+    GetNetworkHotspot = get_network_hotspot() -> Option<Hotspot>,
+    SetNetworkHotspotState = set_network_hotspot_state(enabled: bool),
 
     // system tray
     GetSystemTrayIcons = get_system_tray_icons() -> Vec<SysTrayIcon>,

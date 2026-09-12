@@ -7,6 +7,8 @@
 - HDR toggle for supported monitors on quick settings widget.
 - Light/dark mode toggle on quick settings widget.
 - Night Light toggle on quick settings widget.
+- Mobile hotspot toggle on quick settings widget and network popup, with QR code and connection details (SSID, password,
+  band) for quick sharing.
 
 ### enhancements
 

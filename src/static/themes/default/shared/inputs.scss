@@ -49,6 +49,7 @@ input[type="url"][data-skin="default"],
 input[type="color"][data-skin="default"],
 input[type="file"][data-skin="default"],
 select[data-skin="default"] {
+  @extend %input-common;
   width: 100%;
   padding: 0.25em 0.5em;
 
@@ -83,6 +84,7 @@ input[type="url"][data-skin="transparent"],
 input[type="color"][data-skin="transparent"],
 input[type="file"][data-skin="transparent"],
 select[data-skin="transparent"] {
+  @extend %input-common;
   width: 100%;
   padding: 4px 8px;
 
@@ -110,6 +112,7 @@ select[data-skin="transparent"] {
 }
 
 input[type="radio"][data-skin="default"] {
+  @extend %input-common;
   $size: 16px;
 
   appearance: none;
@@ -144,12 +147,18 @@ input[type="radio"][data-skin="default"] {
     }
   }
 
-  &:hover:not(:checked):enabled {
-    border-color: var(--slu-std-ui-hover-color);
+  &:hover:enabled {
+    &:not(:checked) {
+      border-color: var(--slu-std-ui-hover-color);
+    }
+    &:checked {
+      background-color: var(--slu-std-ui-hover-color);
+    }
   }
 }
 
 input[type="checkbox"][data-skin="default"] {
+  @extend %input-common;
   $size: 16px;
 
   appearance: none;
@@ -184,12 +193,18 @@ input[type="checkbox"][data-skin="default"] {
     }
   }
 
-  &:hover:not(:checked):enabled {
-    border-color: var(--slu-std-ui-hover-color);
+  &:hover:enabled {
+    &:not(:checked) {
+      border-color: var(--slu-std-ui-hover-color);
+    }
+    &:checked {
+      background-color: var(--slu-std-ui-hover-color);
+    }
   }
 }
 
 input[type="checkbox"][data-skin="switch"] {
+  @extend %input-common;
   $width: 36px;
   $height: 18px;
 
@@ -222,8 +237,9 @@ input[type="checkbox"][data-skin="switch"] {
   }
 
   &:hover:enabled {
-    &:not(:checked) {
-      background-color: var(--color-gray-500);
+    background-color: var(--color-gray-500);
+    &:checked {
+      background-color: var(--slu-std-ui-hover-color);
     }
   }
 }
@@ -239,6 +255,7 @@ input[type="checkbox"][data-skin="switch"] {
 
 select[data-skin="default"],
 select[data-skin="transparent"] {
+  @extend %input-common;
   display: flex;
   align-items: center;
   appearance: base-select;

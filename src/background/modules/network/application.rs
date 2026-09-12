@@ -1,13 +1,17 @@
-pub mod v2;
-
 use std::{
     net::{IpAddr, UdpSocket},
     sync::LazyLock,
 };
 
-use seelen_core::system_state::NetworkAdapter as SluNetAdapter;
+use seelen_core::system_state::{Hotspot, HotspotState, NetworkAdapter as SluNetAdapter};
 use windows::{
-    Networking::Connectivity::{NetworkInformation, NetworkStatusChangedEventHandler},
+    Networking::{
+        Connectivity::{NetworkInformation, NetworkStatusChangedEventHandler},
+        NetworkOperators::{
+            NetworkOperatorTetheringManager, TetheringCapability, TetheringOperationStatus,
+            TetheringOperationalState, TetheringWiFiAuthenticationKind, TetheringWiFiBand,
+        },
+    },
     Win32::{
         Foundation::{HANDLE, NO_ERROR},
         NetworkManagement::IpHelper::{
@@ -36,12 +40,14 @@ pub struct NetworkManager {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::enum_variant_names)]
 pub enum NetworkManagerEvent {
     AdaptersChanged,
     ConnectivityChanged {
         connectivity: NLM_CONNECTIVITY,
         ip: String,
     },
+    HotspotChanged(Option<Hotspot>),
 }
 
 unsafe impl Send for NetworkManager {}
@@ -70,6 +76,7 @@ impl NetworkManager {
         self.status_changed_token = Some(NetworkInformation::NetworkStatusChanged(
             &NetworkStatusChangedEventHandler::new(|_| {
                 Self::emit_connectivity_state().log_error();
+                Self::emit_hotspot_state().log_error();
                 Ok(())
             }),
         )?);
@@ -103,6 +110,12 @@ impl NetworkManager {
         Ok(())
     }
 
+    fn emit_hotspot_state() -> Result<()> {
+        let hotspot = Self::get_hotspot()?;
+        NetworkManager::send(NetworkManagerEvent::HotspotChanged(hotspot));
+        Ok(())
+    }
+
     pub fn get_adapters() -> Result<Vec<SluNetAdapter>> {
         let adapters = unsafe {
             let family = AF_UNSPEC.0 as u32;
@@ -121,6 +134,74 @@ impl NetworkManager {
         };
         Ok(adapters)
     }
+
+    /// Returns `None` when hotspot/tethering is not supported or not available
+    /// on the current connection (e.g. no active internet connection profile).
+    pub fn get_hotspot() -> Result<Option<Hotspot>> {
+        let Ok(profile) = NetworkInformation::GetInternetConnectionProfile() else {
+            return Ok(None);
+        };
+
+        let capability =
+            NetworkOperatorTetheringManager::GetTetheringCapabilityFromConnectionProfile(&profile);
+        if !matches!(capability, Ok(TetheringCapability::Enabled)) {
+            return Ok(None);
+        }
+
+        let Ok(tethering) = NetworkOperatorTetheringManager::CreateFromConnectionProfile(&profile)
+        else {
+            return Ok(None);
+        };
+
+        let config = tethering.GetCurrentAccessPointConfiguration()?;
+        let band = match config.Band()? {
+            TetheringWiFiBand::Auto => "Auto",
+            TetheringWiFiBand::TwoPointFourGigahertz => "2.4GHz",
+            TetheringWiFiBand::FiveGigahertz => "5GHz",
+            TetheringWiFiBand::SixGigahertz => "6GHz",
+            _ => "???",
+        }
+        .to_string();
+
+        let encryption = match config.AuthenticationKind()? {
+            TetheringWiFiAuthenticationKind::Wpa2 => "WPA2",
+            TetheringWiFiAuthenticationKind::Wpa3 => "WPA3",
+            TetheringWiFiAuthenticationKind::Wpa3TransitionMode => "WPA2/WPA3",
+            _ => "???",
+        }
+        .to_string();
+
+        Ok(Some(Hotspot {
+            clients: tethering.ClientCount()?,
+            max_clients: tethering.MaxClientCount()?,
+            state: hotspot_state_from_tethering(tethering.TetheringOperationalState()?),
+            ssid: config.Ssid().ok().map(|s| s.to_string()),
+            passphrase: config.Passphrase().ok().map(|s| s.to_string()),
+            band,
+            encryption,
+        }))
+    }
+
+    pub fn toggle_hotspot(enabled: bool) -> Result<()> {
+        let tethering = NetworkOperatorTetheringManager::CreateFromConnectionProfile(
+            &NetworkInformation::GetInternetConnectionProfile()?,
+        )?;
+        let result = if enabled {
+            tethering.StartTetheringAsync()?.join()?
+        } else {
+            tethering.StopTetheringAsync()?.join()?
+        };
+        let status = result.Status()?;
+        if status != TetheringOperationStatus::Success {
+            return Err(format!(
+                "Failed to toggle hotspot, error code: {:?} - {:?}",
+                status,
+                result.AdditionalErrorMessage()
+            )
+            .into());
+        }
+        Ok(())
+    }
 }
 
 impl Drop for NetworkManager {
@@ -134,6 +215,15 @@ impl Drop for NetworkManager {
         {
             log::error!("CancelMibChangeNotify2 failed: {err}");
         }
+    }
+}
+
+fn hotspot_state_from_tethering(state: TetheringOperationalState) -> HotspotState {
+    match state {
+        TetheringOperationalState::On => HotspotState::On,
+        TetheringOperationalState::Off => HotspotState::Off,
+        TetheringOperationalState::InTransition => HotspotState::InTransition,
+        _ => HotspotState::Unknown,
     }
 }
 
