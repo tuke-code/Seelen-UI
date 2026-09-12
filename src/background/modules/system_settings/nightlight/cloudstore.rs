@@ -89,8 +89,12 @@ pub fn cloudstore_unwrap(data: &[u8]) -> Result<(u64, &[u8]), BondError> {
 
     // Bond's CompactBinary format omits fields holding their default value, so a blob
     // with a zero timestamp legitimately has no field 0 here — default it instead of failing.
+    // Likewise an empty inner payload (e.g. Night Light never configured on this account)
+    // is a legitimate default and gets omitted entirely, so fall back to an empty marshaled
+    // struct (header + immediate stop) rather than erroring.
+    const EMPTY_INNER: &[u8] = &[0x43, 0x42, 0x01, 0x00, 0x00];
     let ts = timestamp.unwrap_or(0);
-    let bytes = payload.ok_or(BondError::MissingField(1))?;
+    let bytes = payload.unwrap_or(EMPTY_INNER);
     Ok((ts, bytes))
 }
 
@@ -177,5 +181,33 @@ mod tests {
         let (timestamp, inner) = cloudstore_unwrap(&STATE_ENABLED_BYTES).unwrap();
         let rewrapped = cloudstore_wrap(timestamp, inner);
         assert_eq!(rewrapped, STATE_ENABLED_BYTES);
+    }
+
+    #[test]
+    fn unwrap_missing_payload_defaults_to_empty_inner() {
+        // A blob whose data wrapper struct (field 1.1) never got written because its
+        // inner list<int8> payload was empty/default — this is what a Night Light
+        // registry blob looks like on an account that has never touched the feature.
+        let mut writer = CompactBinaryWriter::new();
+        writer.write_marshaled_header();
+
+        writer.write_field_header(0, BondType::Struct);
+        writer.write_stop();
+
+        writer.write_field_header(1, BondType::Struct);
+        writer.write_field_header(0, BondType::UInt64);
+        writer.write_uint64(1234);
+        writer.write_stop();
+
+        writer.write_stop();
+        let data = writer.into_bytes();
+
+        let (timestamp, inner) = cloudstore_unwrap(&data).unwrap();
+        assert_eq!(timestamp, 1234);
+
+        // The empty inner payload should still parse as a valid, empty CB struct.
+        let mut reader = CompactBinaryReader::new(inner);
+        reader.read_marshaled_header().unwrap();
+        assert_eq!(reader.read_field_header().unwrap(), FieldHeader::Stop);
     }
 }
