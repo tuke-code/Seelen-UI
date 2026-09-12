@@ -33,7 +33,7 @@
     </td>
     <td align="center" width="33%">
       <a
-        href="https://discord.gg/ABfASx5ZAJ"
+        href="https://discord.seelen.io"
         target="_blank"
         rel="noopener noreferrer"
         aria-label="Join the Seelen UI Discord community">
@@ -244,8 +244,8 @@ and Winget. The `.exe` installer also delivers in-app update notifications.
 
 Once installed, open Seelen UI and the settings interface will guide you through the initial setup. Enable the
 components you want — toolbar, dock, tiling manager, widgets — and start customizing from there. The
-[official documentation](https://seelen.io/apps/seelen-ui) and the [Discord community](https://discord.gg/ABfASx5ZAJ)
-are the best places to go deeper.
+[official documentation](https://seelen.io/apps/seelen-ui) and the [Discord community](https://discord.seelen.io) are
+the best places to go deeper.
 
 ---
 
@@ -261,7 +261,7 @@ See the [LICENSE](LICENSE) file for details.
 
 ## Contact
 
-For inquiries and support, join us on [Discord](https://discord.gg/ABfASx5ZAJ).
+For inquiries and support, join us on [Discord](https://discord.seelen.io).
 
 ## Sponsors
 

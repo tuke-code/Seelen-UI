@@ -166,9 +166,6 @@ pub fn get_activity() -> Activity<'static> {
         .party(Party::new().id("seelen-ui-party").size([10, 10]))
         .buttons(vec![
             Button::new("🚀 Download Now!", "https://seelen.io/apps/seelen-ui"),
-            Button::new(
-                "🐦‍⬛ Seelen Network",
-                "https://discord.com/invite/seelen-network-751144791596597561",
-            ),
+            Button::new("🐦‍⬛ Seelen Network", "https://discord.seelen.io"),
         ])
 }

@@ -59,7 +59,7 @@ export function NoticeSlider() {
   const discordBanner: New = {
     title: t("discord_banner.title"),
     message: t("discord_banner.message"),
-    url: "https://discord.gg/ABfASx5ZAJ",
+    url: "https://discord.seelen.io",
     image: "discord.webp",
   };
 

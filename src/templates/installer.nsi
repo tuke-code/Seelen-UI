@@ -390,7 +390,7 @@ Var AppStartMenuFolder
 ; Show discord link
 !define MUI_FINISHPAGE_LINK_COLOR 59a7f6
 !define MUI_FINISHPAGE_LINK "Join us on Discord!"
-!define MUI_FINISHPAGE_LINK_LOCATION "https://discord.gg/ABfASx5ZAJ"
+!define MUI_FINISHPAGE_LINK_LOCATION "https://discord.seelen.io"
 !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE RunMainBinary
 !insertmacro MUI_PAGE_FINISH
